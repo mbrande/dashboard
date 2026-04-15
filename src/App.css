@@ -922,9 +922,16 @@ body.panel-open { overflow: hidden; }
 .dt-name { font-size: 0.8rem; font-weight: 500; color: #202124; }
 .dt-ip { font-size: 0.7rem; }
 .dt-speeds { display: flex; gap: 14px; font-size: 0.75rem; font-variant-numeric: tabular-nums; }
+.dt-clickable { cursor: pointer; transition: background 0.15s; }
+.dt-clickable:hover { background: var(--bg-hover); }
+.dt-selected { background: var(--accent-bg); }
 .dt-in { color: #1a73e8; }
 .dt-out { color: #34a853; }
-.dt-total { margin-left: auto; color: #5f6368; font-weight: 500; }
+.dt-total { margin-left: auto; color: var(--text-secondary); font-weight: 500; }
+.dt-chart {
+  padding: 8px 12px 12px; border-bottom: 1px solid var(--border-light);
+  animation: pageIn 0.2s ease-out;
+}
 
 /* FIM By Agent */
 .fim-agent-list { display: flex; flex-direction: column; gap: 6px; }

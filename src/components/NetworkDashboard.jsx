@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 const BASE = process.env.REACT_APP_N8N_BASE_URL;
 
@@ -36,11 +36,94 @@ function TrafficChart({ data, title }) {
   );
 }
 
+function DeviceTrafficPanel({ devices }) {
+  const [selected, setSelected] = useState(null);
+  const [history, setHistory] = useState([]);
+  const [histLoading, setHistLoading] = useState(false);
+
+  const handleClick = (device) => {
+    if (selected === device.hostid) {
+      setSelected(null);
+      setHistory([]);
+      return;
+    }
+    setSelected(device.hostid);
+    setHistLoading(true);
+    fetch(`${BASE}/zabbix/device-history?hostid=${device.hostid}`)
+      .then(r => r.json())
+      .then(d => {
+        const result = Array.isArray(d) ? d[0] : d;
+        setHistory(result?.history || []);
+        setHistLoading(false);
+      })
+      .catch(() => setHistLoading(false));
+  };
+
+  return (
+    <div className="card">
+      <h2>Device Traffic ({devices.length})</h2>
+      <div className="device-traffic-list">
+        {devices.map(d => {
+          const total = d.in_bps + d.out_bps;
+          const maxTotal = devices[0] ? devices[0].in_bps + devices[0].out_bps : 1;
+          const pct = maxTotal > 0 ? (total / maxTotal) * 100 : 0;
+          const shortName = d.name.replace('.home.arpa', '');
+          const isSelected = selected === d.hostid;
+          return (
+            <div key={d.hostid}>
+              <div className={`dt-row dt-clickable ${isSelected ? 'dt-selected' : ''}`} onClick={() => handleClick(d)}>
+                <div className="dt-bar-bg">
+                  <div className="dt-bar" style={{ width: `${pct}%` }} />
+                </div>
+                <div className="dt-info">
+                  <div className="dt-name-row">
+                    <span className="dt-name">{shortName}</span>
+                    <span className="dt-ip mono dim">{d.ip}</span>
+                  </div>
+                  <div className="dt-speeds">
+                    <span className="dt-in">&#9660; {formatBits(d.in_bps)}</span>
+                    <span className="dt-out">&#9650; {formatBits(d.out_bps)}</span>
+                    <span className="dt-total">{formatBits(total)}</span>
+                  </div>
+                </div>
+              </div>
+              {isSelected && (
+                <div className="dt-chart">
+                  {histLoading && <div style={{ textAlign: 'center', padding: 20, color: 'var(--text-dim)' }}><div className="spinner" style={{ width: 20, height: 20, borderWidth: 2, display: 'inline-block' }} /></div>}
+                  {!histLoading && history.length > 0 && (
+                    <ResponsiveContainer width="100%" height={160}>
+                      <AreaChart data={history} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="time" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
+                        <YAxis tickFormatter={v => formatBits(v)} tick={{ fontSize: 10 }} width={60} />
+                        <Tooltip
+                          formatter={(v, name) => [formatBits(v), name]}
+                          contentStyle={{ fontSize: '0.75rem', borderRadius: 8, border: '1px solid var(--border)' }}
+                        />
+                        <Area type="monotone" dataKey="in" name="In" stroke="#1a73e8" fill="#1a73e8" fillOpacity={0.1} strokeWidth={1.5} />
+                        <Area type="monotone" dataKey="out" name="Out" stroke="#34a853" fill="#34a853" fillOpacity={0.1} strokeWidth={1.5} />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  )}
+                  {!histLoading && history.length === 0 && (
+                    <div style={{ textAlign: 'center', padding: 16, color: 'var(--text-dim)', fontSize: '0.8rem' }}>No history data available</div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function NetworkDashboard() {
   const [router, setRouter] = useState(null);
   const [interfaces, setInterfaces] = useState([]);
   const [traffic, setTraffic] = useState([]);
   const [devices, setDevices] = useState([]);
+  const [routerStats, setRouterStats] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -50,16 +133,19 @@ export default function NetworkDashboard() {
         fetch(`${BASE}/zabbix/router`).then(r => r.json()),
         fetch(`${BASE}/zabbix/router-interfaces`).then(r => r.json()),
         fetch(`${BASE}/zabbix/router-traffic`).then(r => r.json()),
-        fetch(`${BASE}/zabbix/device-traffic`).then(r => r.json())
-      ]).then(([r, ifaces, t, dt]) => {
+        fetch(`${BASE}/zabbix/device-traffic`).then(r => r.json()),
+        fetch(`${BASE}/zabbix/router-stats`).then(r => r.json())
+      ]).then(([r, ifaces, t, dt, rs]) => {
         const rd = Array.isArray(r) ? r[0] : r;
         const id = Array.isArray(ifaces) ? (ifaces[0]?.interfaces || ifaces) : (ifaces?.interfaces || []);
         const td = Array.isArray(t) ? (t[0]?.history || t) : (t?.history || []);
         const dd = Array.isArray(dt) ? (dt[0]?.devices || dt) : (dt?.devices || []);
+        const rsh = Array.isArray(rs) ? (rs[0]?.history || rs) : (rs?.history || []);
         setRouter(rd);
         setInterfaces(Array.isArray(id) ? id : []);
         setTraffic(Array.isArray(td) ? td : []);
         setDevices(Array.isArray(dd) ? dd : []);
+        setRouterStats(Array.isArray(rsh) ? rsh : []);
         setError(null);
         setLoading(false);
       }).catch(err => {
@@ -122,8 +208,33 @@ export default function NetworkDashboard() {
         </>
       )}
 
-      {/* WAN traffic chart */}
-      <TrafficChart data={traffic} title="WAN Traffic" />
+      {/* WAN traffic chart + Router CPU/Memory */}
+      <div className="chart-row">
+        <div className="chart-main">
+          <TrafficChart data={traffic} title="WAN Traffic" />
+        </div>
+        <div className="chart-side">
+          {routerStats.length > 0 && (
+            <div className="card" style={{ marginBottom: 16 }}>
+              <h2>Router CPU & Memory</h2>
+              <ResponsiveContainer width="100%" height={240}>
+                <AreaChart data={routerStats} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="time" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
+                  <YAxis domain={[0, 100]} tickFormatter={v => `${v}%`} tick={{ fontSize: 10 }} width={40} />
+                  <Tooltip
+                    formatter={(v, name) => [`${v}%`, name]}
+                    contentStyle={{ fontSize: '0.75rem', borderRadius: 8, border: '1px solid var(--border)' }}
+                  />
+                  <Legend iconSize={8} wrapperStyle={{ fontSize: '0.7rem', paddingTop: 4 }} />
+                  <Area type="monotone" dataKey="cpu" name="CPU" stroke="#1a73e8" fill="#1a73e8" fillOpacity={0.1} strokeWidth={2} connectNulls />
+                  <Area type="monotone" dataKey="memory" name="Memory" stroke="#8430ce" fill="#8430ce" fillOpacity={0.1} strokeWidth={2} connectNulls />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </div>
+      </div>
 
       <div className="two-col">
         {/* Router interfaces */}
@@ -162,35 +273,7 @@ export default function NetworkDashboard() {
 
         {/* Device traffic */}
         {devices.length > 0 && (
-          <div className="card">
-            <h2>Device Traffic ({devices.length})</h2>
-            <div className="device-traffic-list">
-              {devices.map(d => {
-                const total = d.in_bps + d.out_bps;
-                const maxTotal = devices[0] ? devices[0].in_bps + devices[0].out_bps : 1;
-                const pct = maxTotal > 0 ? (total / maxTotal) * 100 : 0;
-                const shortName = d.name.replace('.home.arpa', '');
-                return (
-                  <div key={d.hostid} className="dt-row">
-                    <div className="dt-bar-bg">
-                      <div className="dt-bar" style={{ width: `${pct}%` }} />
-                    </div>
-                    <div className="dt-info">
-                      <div className="dt-name-row">
-                        <span className="dt-name">{shortName}</span>
-                        <span className="dt-ip mono dim">{d.ip}</span>
-                      </div>
-                      <div className="dt-speeds">
-                        <span className="dt-in">&#9660; {formatBits(d.in_bps)}</span>
-                        <span className="dt-out">&#9650; {formatBits(d.out_bps)}</span>
-                        <span className="dt-total">{formatBits(total)}</span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          <DeviceTrafficPanel devices={devices} />
         )}
       </div>
     </div>
