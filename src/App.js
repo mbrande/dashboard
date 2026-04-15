@@ -11,6 +11,9 @@ import CriticalInsights from './components/CriticalInsights';
 import FailedLogins from './components/FailedLogins';
 import FimByAgent from './components/FimByAgent';
 import ErrorBoundary from './components/ErrorBoundary';
+import AlertBell from './components/AlertBell';
+import AlertDrawer from './components/AlertDrawer';
+import { useAlerts } from './hooks/useAlerts';
 import './App.css';
 
 // Lazy-loaded pages
@@ -149,26 +152,36 @@ function ThemeToggle({ dark, onToggle }) {
   );
 }
 
-function App() {
+function AppContent() {
   const [dark, toggleDark] = useTheme();
+  const { alerts, unread, permission, requestPermission, markRead, clearAll } = useAlerts();
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const hasCritical = alerts.some(a => a.severity === 'critical');
+
+  const handleBellClick = () => {
+    if (permission === 'default') requestPermission();
+    setDrawerOpen(prev => !prev);
+  };
 
   return (
-    <HashRouter>
-      <div className="app">
-        <nav className="nav">
-          <div className="nav-top">
-            <NavLink to="/" className="nav-left clickable">
-              <div className="nav-logo">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="24" height="24">
-                  <path d="M12 2L2 7l10 5 10-5-10-5z" />
-                  <path d="M2 17l10 5 10-5" />
-                  <path d="M2 12l10 5 10-5" />
-                </svg>
-              </div>
-              <span className="nav-title">Home Dashboard</span>
-            </NavLink>
+    <div className="app">
+      <nav className="nav">
+        <div className="nav-top">
+          <NavLink to="/" className="nav-left clickable">
+            <div className="nav-logo">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="24" height="24">
+                <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                <path d="M2 17l10 5 10-5" />
+                <path d="M2 12l10 5 10-5" />
+              </svg>
+            </div>
+            <span className="nav-title">Home Dashboard</span>
+          </NavLink>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <AlertBell unread={unread} hasCritical={hasCritical} onClick={handleBellClick} />
             <ThemeToggle dark={dark} onToggle={toggleDark} />
           </div>
+        </div>
           <div className="nav-bottom">
             <div className="nav-tabs">
               <NavLink to="/" end className={({isActive}) => `nav-tab ${isActive ? 'active' : ''}`}>Home</NavLink>
@@ -191,7 +204,25 @@ function App() {
             </Routes>
           </Suspense>
         </main>
+
+        {drawerOpen && (
+          <AlertDrawer
+            alerts={alerts}
+            permission={permission}
+            onRequestPermission={requestPermission}
+            onMarkRead={markRead}
+            onClearAll={clearAll}
+            onClose={() => setDrawerOpen(false)}
+          />
+        )}
       </div>
+  );
+}
+
+function App() {
+  return (
+    <HashRouter>
+      <AppContent />
     </HashRouter>
   );
 }

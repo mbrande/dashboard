@@ -95,15 +95,20 @@ export default function ServerMetrics() {
       {/* Server cards */}
       <div className="server-grid">
         {servers.map(s => (
-          <div key={s.hostid} className={`server-card ${s.cpu >= 80 || s.memory >= 90 ? 'server-warn' : ''}`}>
+          <div key={s.hostid} className={`server-card ${s.available === false ? 'server-offline' : s.cpu >= 80 || s.memory >= 90 ? 'server-warn' : ''}`}>
             <div className="server-header">
-              <span className="server-name">{s.name}</span>
-              <span className="server-group">{s.group}</span>
+              <span className="server-name">
+                <span className={`status-dot ${s.available === false ? 'inactive' : 'active'}`} />{' '}
+                {s.name}
+              </span>
+              {s.available === false && <span className="server-offline-badge">OFFLINE</span>}
+              {s.available !== false && <span className="server-group">{s.group}</span>}
             </div>
             <div className="server-ip">{s.ip}</div>
             <div className="server-gauges">
               <GaugeBar value={s.cpu} label="CPU" color="#1a73e8" />
               <GaugeBar value={s.memory} label="MEM" color="#8430ce" />
+              <GaugeBar value={s.disk_pused} label="DISK" color="#e37400" warn={80} crit={95} />
             </div>
             <div className="server-meta">
               {s.load1 !== null && <span>Load: {s.load1}</span>}
