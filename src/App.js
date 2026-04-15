@@ -145,7 +145,7 @@ function App() {
   return (
     <div className="app">
       <nav className="nav">
-        <div className="nav-left">
+        <div className="nav-left clickable" onClick={() => setTab('home')}>
           <div className="nav-logo">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="24" height="24">
               <path d="M12 2L2 7l10 5 10-5-10-5z" />
