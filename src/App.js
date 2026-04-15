@@ -1,13 +1,16 @@
 import React, { useState } from 'react';
 import { useWazuhData } from './hooks/useWazuhData';
 import ThreatOverview, { TopRules } from './components/ThreatOverview';
-import { AlertTrendArea, SyscheckTrendBar } from './components/TrendCharts';
+import { AlertTrendArea } from './components/TrendCharts';
 import AgentGrid from './components/AgentGrid';
 import AgentDetail from './components/AgentDetail';
-import CriticalFimTable from './components/CriticalFimTable';
 import LiveFeed from './components/LiveFeed';
 import CriticalInsights from './components/CriticalInsights';
 import FailedLogins from './components/FailedLogins';
+import FimByAgent from './components/FimByAgent';
+import ServerMetrics from './components/ServerMetrics';
+import NetworkDashboard from './components/NetworkDashboard';
+import NewsPage from './components/NewsPage';
 import './App.css';
 
 function HomePage({ onNavigate }) {
@@ -24,16 +27,16 @@ function HomePage({ onNavigate }) {
           <div className="home-tile-label">Security</div>
           <div className="home-tile-desc">Wazuh alerts, agents & file integrity</div>
         </div>
-        <div className="home-tile home-tile-disabled">
+        <div className="home-tile" onClick={() => onNavigate('metrics')}>
           <div className="home-tile-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="36" height="36">
               <rect x="2" y="3" width="20" height="14" rx="2" /><path d="M8 21h8M12 17v4" />
             </svg>
           </div>
           <div className="home-tile-label">Server Metrics</div>
-          <div className="home-tile-desc">Coming soon</div>
+          <div className="home-tile-desc">Zabbix CPU, memory, problems & network</div>
         </div>
-        <div className="home-tile home-tile-disabled">
+        <div className="home-tile" onClick={() => onNavigate('network')}>
           <div className="home-tile-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="36" height="36">
               <circle cx="12" cy="12" r="3" />
@@ -41,16 +44,16 @@ function HomePage({ onNavigate }) {
             </svg>
           </div>
           <div className="home-tile-label">Network</div>
-          <div className="home-tile-desc">Coming soon</div>
+          <div className="home-tile-desc">Synology router traffic & interfaces</div>
         </div>
-        <div className="home-tile home-tile-disabled">
+        <div className="home-tile" onClick={() => onNavigate('news')}>
           <div className="home-tile-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="36" height="36">
-              <path d="M3 12h4l3-9 4 18 3-9h4" />
+              <path d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V9m2 11a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 12h10" />
             </svg>
           </div>
-          <div className="home-tile-label">Monitoring</div>
-          <div className="home-tile-desc">Coming soon</div>
+          <div className="home-tile-label">News</div>
+          <div className="home-tile-desc">AI, Music, Computers & Tech feeds</div>
         </div>
       </div>
     </div>
@@ -58,7 +61,7 @@ function HomePage({ onNavigate }) {
 }
 
 function SecurityPage() {
-  const { live, rules, trends, agents, criticalFim, loading, error, refresh, lastRefresh } = useWazuhData();
+  const { live, rules, trends, agents, loading, error, refresh, lastRefresh } = useWazuhData();
   const [selectedAgent, setSelectedAgent] = useState(null);
 
   if (loading) {
@@ -116,21 +119,14 @@ function SecurityPage() {
 
       <LiveFeed />
 
-      <div className="chart-row">
-        <div className="chart-main">
-          <AlertTrendArea trends={chartTrends} />
-        </div>
-        <div className="chart-side">
-          <SyscheckTrendBar trends={chartTrends} />
-        </div>
-      </div>
+      <AlertTrendArea trends={chartTrends} />
+
+      <FimByAgent />
 
       <div className="two-col">
         <TopRules rules={rules} />
         <AgentGrid agents={agents} onAgentClick={setSelectedAgent} />
       </div>
-
-      <CriticalFimTable events={criticalFim} />
 
       {selectedAgent && (
         <AgentDetail agent={selectedAgent} onClose={() => setSelectedAgent(null)} />
@@ -158,12 +154,18 @@ function App() {
         <div className="nav-tabs">
           <button className={`nav-tab ${tab === 'home' ? 'active' : ''}`} onClick={() => setTab('home')}>Home</button>
           <button className={`nav-tab ${tab === 'security' ? 'active' : ''}`} onClick={() => setTab('security')}>Security</button>
+          <button className={`nav-tab ${tab === 'metrics' ? 'active' : ''}`} onClick={() => setTab('metrics')}>Metrics</button>
+          <button className={`nav-tab ${tab === 'network' ? 'active' : ''}`} onClick={() => setTab('network')}>Network</button>
+          <button className={`nav-tab ${tab === 'news' ? 'active' : ''}`} onClick={() => setTab('news')}>News</button>
         </div>
       </nav>
 
       <main className="main">
         {tab === 'home' && <HomePage onNavigate={setTab} />}
         {tab === 'security' && <SecurityPage />}
+        {tab === 'metrics' && <ServerMetrics />}
+        {tab === 'network' && <NetworkDashboard />}
+        {tab === 'news' && <NewsPage />}
       </main>
     </div>
   );

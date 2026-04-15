@@ -107,11 +107,18 @@ export default function CriticalInsights() {
             <div className="insight-title">Failed Authentication</div>
             <div className="insight-count">{failed_auth.total} attempts</div>
             <div className="insight-items">
-              {failed_auth.by_ip?.map((ip, i) => (
+              {failed_auth.by_ip?.length > 0 && failed_auth.by_ip.map((ip, i) => (
                 <div key={i} className="insight-ip-item">
                   <span className="feed-net feed-src">{ip.ip}</span>
                   <span className="insight-detail">→ {ip.agents?.join(', ')}</span>
                   <span className="insight-vuln-count">x{ip.count}</span>
+                </div>
+              ))}
+              {(!failed_auth.by_ip || failed_auth.by_ip.length === 0) && failed_auth.by_user?.map((u, i) => (
+                <div key={i} className="insight-ip-item">
+                  <span className="badge badge-agent">{u.agents?.[0] || 'unknown'}</span>
+                  <span className="insight-detail">user: <strong>{u.user}</strong></span>
+                  <span className="insight-vuln-count">x{u.count}</span>
                 </div>
               ))}
             </div>
