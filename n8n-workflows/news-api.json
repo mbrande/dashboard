@@ -1,0 +1,921 @@
+{
+  "id": "IQC5ugZdq95iqzz2",
+  "name": "News API",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "path": "news/articles",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-articles",
+      "name": "GET /news/articles",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "news-articles"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst query = $json.query || {};\nconst topic = query.topic || null;\nconst page = parseInt(query.page) || 1;\nconst limit = Math.min(parseInt(query.limit) || 20, 50);\nconst search = query.search || null;\nconst offset = (page - 1) * limit;\n\nlet sql;\n\nif (search) {\n  const searchEsc = search.replace(/'/g, \"''\");\n  const topicWhere = topic ? ` AND a.topic = '${topic.replace(/'/g, \"''\")}'` : '';\n  sql = `SELECT a.id, a.title, a.url, a.author, a.published_at, a.ai_summary, a.ai_tags, a.relevance_score, a.topic, a.content_snippet, s.name as source_name, s.source_type FROM news_articles a JOIN news_sources s ON a.source_id = s.id WHERE MATCH(a.title, a.ai_summary, a.content_snippet) AGAINST('${searchEsc}' IN NATURAL LANGUAGE MODE)${topicWhere} ORDER BY a.relevance_score DESC, a.published_at DESC LIMIT ${limit} OFFSET ${offset}`;\n} else {\n  const topicWhere = topic ? `AND a.topic = '${topic.replace(/'/g, \"''\")}'` : '';\n  // Sort by relevance first (high relevance = more on-topic), then by date\n  sql = `SELECT a.id, a.title, a.url, a.author, a.published_at, a.ai_summary, a.ai_tags, a.relevance_score, a.topic, a.content_snippet, s.name as source_name, s.source_type FROM news_articles a JOIN news_sources s ON a.source_id = s.id WHERE 1=1 ${topicWhere} AND a.relevance_score >= 5 ORDER BY a.relevance_score DESC, a.published_at DESC LIMIT ${limit} OFFSET ${offset}`;\n}\n\nreturn [{ json: { sql, page, limit } }];\n"
+      },
+      "id": "na-build-query",
+      "name": "Build Query",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}"
+      },
+      "id": "na-query",
+      "name": "Query Articles",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        448,
+        0
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "9io5uj6IpYHlzMgX",
+          "name": "MySQL - Home DB"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst articles = $input.all().map(i => {\n  const a = i.json;\n  // Parse ai_tags from JSON string if needed\n  let tags = a.ai_tags;\n  if (typeof tags === 'string') {\n    try { tags = JSON.parse(tags); } catch(e) { tags = []; }\n  }\n  return {\n    ...a,\n    ai_tags: tags || []\n  };\n});\n\nconst meta = $('Build Query').first().json;\nreturn [{ json: { articles, total: articles.length, page: meta.page } }];\n"
+      },
+      "id": "na-format",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "na-respond",
+      "name": "Respond Articles",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        896,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "path": "news/sources",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-sources",
+      "name": "GET /news/sources",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        300
+      ],
+      "webhookId": "news-sources"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, name, url, source_type, topic, enabled, last_fetched_at FROM news_sources ORDER BY topic, name"
+      },
+      "id": "ns-query",
+      "name": "Query Sources",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        224,
+        300
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "9io5uj6IpYHlzMgX",
+          "name": "MySQL - Home DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const sources = $input.all().map(i => i.json);\nreturn [{ json: { sources } }];"
+      },
+      "id": "ns-format",
+      "name": "Format Sources",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "ns-respond",
+      "name": "Respond Sources",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        672,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "news/chat",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-chat",
+      "name": "POST /news/chat",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        600
+      ],
+      "webhookId": "news-chat"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst body = $json.body || {};\nconst message = body.message || '';\nconst sessionId = body.session_id || 'default';\n\n// Escape for SQL\nconst esc = (v) => v ? \"'\" + String(v).replace(/\\\\/g, '\\\\\\\\').replace(/'/g, \"''\") + \"'\" : \"''\";\n\n// Build the article search query using FULLTEXT\nconst searchTerms = message.replace(/['\"]/g, '').substring(0, 200);\nconst searchSql = `SELECT a.id, a.title, a.url, a.ai_summary, a.content_snippet, a.topic, a.published_at, s.name as source_name FROM news_articles a JOIN news_sources s ON a.source_id = s.id WHERE MATCH(a.title, a.ai_summary, a.content_snippet) AGAINST(${esc(searchTerms)} IN NATURAL LANGUAGE MODE) ORDER BY a.published_at DESC LIMIT 10`;\n\n// Save user message\nconst saveSql = `INSERT INTO news_chat_history (session_id, role, message) VALUES (${esc(sessionId)}, 'user', ${esc(message)})`;\n\n// Get recent chat history\nconst historySql = `SELECT role, message FROM news_chat_history WHERE session_id = ${esc(sessionId)} ORDER BY created_at DESC LIMIT 10`;\n\nreturn [{ json: { message, sessionId, searchSql, saveSql, historySql } }];\n"
+      },
+      "id": "nc-prep",
+      "name": "Chat Prep",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.saveSql }}"
+      },
+      "id": "nc-save-user",
+      "name": "Save User Msg",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        448,
+        600
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "9io5uj6IpYHlzMgX",
+          "name": "MySQL - Home DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $('Chat Prep').first().json.searchSql }}"
+      },
+      "id": "nc-search",
+      "name": "Search Articles",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        672,
+        600
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "9io5uj6IpYHlzMgX",
+          "name": "MySQL - Home DB"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst articles = $input.all().map(i => i.json).filter(a => a.title);\nconst userMessage = $('Chat Prep').first().json.message;\n\nlet context = '';\nconst sources = [];\nif (articles.length > 0) {\n  context = '\\n\\nRelevant articles from our news archive:\\n' + \n    articles.map((a, i) => {\n      sources.push({ title: a.title, url: a.url });\n      return `[${i+1}] \"${a.title}\" (${a.source_name}, ${a.published_at || 'recent'})\\n${a.ai_summary || a.content_snippet || 'No summary available'}`;\n    }).join('\\n\\n');\n}\n\nconst systemPrompt = `You are a helpful news research assistant. You answer questions about recent news in AI, technology, music production, and computing.\n\nWhen answering:\n- Be concise and informative (2-4 paragraphs max)\n- Reference specific articles by their number [1], [2], etc.\n- If the archived articles don't cover the question well, say so\n- Focus on facts from the articles provided\n\n${context}`;\n\nconst requestBody = {\n  model: 'gpt-4o-mini',\n  messages: [\n    { role: 'system', content: systemPrompt },\n    { role: 'user', content: userMessage }\n  ],\n  temperature: 0.5,\n  max_tokens: 800\n};\n\nreturn [{ json: { requestBody: JSON.stringify(requestBody), sources } }];\n"
+      },
+      "id": "nc-build-ai",
+      "name": "Build AI Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.requestBody }}",
+        "options": {}
+      },
+      "id": "nc-openai",
+      "name": "Call OpenAI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        600
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "3hmSfLDh5GvxKdKm",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst aiResponse = $json;\nconst reply = aiResponse?.choices?.[0]?.message?.content || 'I could not generate a response.';\nconst sources = $('Build AI Request').first().json.sources || [];\nconst sessionId = $('Chat Prep').first().json.sessionId;\n\n// Escape for SQL\nconst esc = (v) => v ? \"'\" + String(v).replace(/\\\\/g, '\\\\\\\\').replace(/'/g, \"''\") + \"'\" : \"''\";\nconst saveSql = `INSERT INTO news_chat_history (session_id, role, message) VALUES (${esc(sessionId)}, 'assistant', ${esc(reply)})`;\n\nreturn [{ json: { reply, sources, searched_web: false, saveSql } }];\n"
+      },
+      "id": "nc-format",
+      "name": "Format Chat Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1344,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.saveSql }}"
+      },
+      "id": "nc-save-asst",
+      "name": "Save Assistant Msg",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        1568,
+        600
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "9io5uj6IpYHlzMgX",
+          "name": "MySQL - Home DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst data = $('Format Chat Response').first().json;\nreturn [{ json: { reply: data.reply, sources: data.sources, searched_web: data.searched_web } }];\n"
+      },
+      "id": "nc-resp-prep",
+      "name": "Prep Final Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1792,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "nc-respond",
+      "name": "Respond Chat",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2016,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "news/save",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-save",
+      "name": "POST /news/save",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        900
+      ],
+      "webhookId": "news-save"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst body = $json.body || {};\nconst articleId = parseInt(body.article_id);\nconst action = body.action || 'save'; // 'save' or 'unsave'\n\nif (!articleId) return [{ json: { error: 'article_id required' } }];\n\nlet sql;\nif (action === 'unsave') {\n  sql = `DELETE FROM news_saved_articles WHERE article_id = ${articleId}`;\n} else {\n  sql = `INSERT IGNORE INTO news_saved_articles (article_id) VALUES (${articleId})`;\n}\n\nreturn [{ json: { sql, articleId, action } }];\n"
+      },
+      "id": "sv-prep",
+      "name": "Save Prep",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        900
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}"
+      },
+      "id": "sv-exec",
+      "name": "Save Exec",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        448,
+        900
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "9io5uj6IpYHlzMgX",
+          "name": "MySQL - Home DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst meta = $('Save Prep').first().json;\nreturn [{ json: { success: true, article_id: meta.articleId, action: meta.action } }];\n"
+      },
+      "id": "sv-format",
+      "name": "Save Format",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        900
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "sv-respond",
+      "name": "Save Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        896,
+        900
+      ]
+    },
+    {
+      "parameters": {
+        "path": "news/saved",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-saved",
+      "name": "GET /news/saved",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        1200
+      ],
+      "webhookId": "news-saved"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst query = $json.query || {};\nconst topic = query.topic || null;\nconst topicWhere = topic ? `AND a.topic = '${topic.replace(/'/g, \"''\")}'` : '';\n\nconst sql = `SELECT a.id, a.title, a.url, a.author, a.published_at, a.ai_summary, a.ai_tags, a.relevance_score, a.topic, a.content_snippet, s.name as source_name, s.source_type, sv.saved_at\nFROM news_saved_articles sv\nJOIN news_articles a ON sv.article_id = a.id\nJOIN news_sources s ON a.source_id = s.id\nWHERE 1=1 ${topicWhere}\nORDER BY sv.saved_at DESC`;\n\nreturn [{ json: { sql } }];\n"
+      },
+      "id": "svd-prep",
+      "name": "Saved Prep",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        1200
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}"
+      },
+      "id": "svd-query",
+      "name": "Saved Query",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        448,
+        1200
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "9io5uj6IpYHlzMgX",
+          "name": "MySQL - Home DB"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst articles = $input.all().map(i => {\n  const a = i.json;\n  let tags = a.ai_tags;\n  if (typeof tags === 'string') { try { tags = JSON.parse(tags); } catch(e) { tags = []; } }\n  return { ...a, ai_tags: tags || [] };\n});\nreturn [{ json: { articles, total: articles.length } }];\n"
+      },
+      "id": "svd-format",
+      "name": "Saved Format",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        1200
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "svd-respond",
+      "name": "Saved Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        896,
+        1200
+      ]
+    },
+    {
+      "parameters": {
+        "path": "news/saved-ids",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-saved-ids",
+      "name": "GET /news/saved-ids",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        1500
+      ],
+      "webhookId": "news-saved-ids"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT article_id FROM news_saved_articles"
+      },
+      "id": "svi-query",
+      "name": "Saved IDs Query",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        224,
+        1500
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "9io5uj6IpYHlzMgX",
+          "name": "MySQL - Home DB"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const ids = $input.all().map(i => i.json.article_id).filter(Boolean);\nreturn [{ json: { ids } }];"
+      },
+      "id": "svi-format",
+      "name": "Saved IDs Format",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        1500
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "svi-respond",
+      "name": "Saved IDs Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        672,
+        1500
+      ]
+    }
+  ],
+  "connections": {
+    "GET /news/articles": {
+      "main": [
+        [
+          {
+            "node": "Build Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Query": {
+      "main": [
+        [
+          {
+            "node": "Query Articles",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Articles": {
+      "main": [
+        [
+          {
+            "node": "Format Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Response": {
+      "main": [
+        [
+          {
+            "node": "Respond Articles",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET /news/sources": {
+      "main": [
+        [
+          {
+            "node": "Query Sources",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Sources": {
+      "main": [
+        [
+          {
+            "node": "Format Sources",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Sources": {
+      "main": [
+        [
+          {
+            "node": "Respond Sources",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST /news/chat": {
+      "main": [
+        [
+          {
+            "node": "Chat Prep",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chat Prep": {
+      "main": [
+        [
+          {
+            "node": "Save User Msg",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save User Msg": {
+      "main": [
+        [
+          {
+            "node": "Search Articles",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Articles": {
+      "main": [
+        [
+          {
+            "node": "Build AI Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build AI Request": {
+      "main": [
+        [
+          {
+            "node": "Call OpenAI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call OpenAI": {
+      "main": [
+        [
+          {
+            "node": "Format Chat Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Chat Response": {
+      "main": [
+        [
+          {
+            "node": "Save Assistant Msg",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Assistant Msg": {
+      "main": [
+        [
+          {
+            "node": "Prep Final Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Final Response": {
+      "main": [
+        [
+          {
+            "node": "Respond Chat",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST /news/save": {
+      "main": [
+        [
+          {
+            "node": "Save Prep",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Prep": {
+      "main": [
+        [
+          {
+            "node": "Save Exec",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Exec": {
+      "main": [
+        [
+          {
+            "node": "Save Format",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Format": {
+      "main": [
+        [
+          {
+            "node": "Save Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET /news/saved": {
+      "main": [
+        [
+          {
+            "node": "Saved Prep",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Saved Prep": {
+      "main": [
+        [
+          {
+            "node": "Saved Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Saved Query": {
+      "main": [
+        [
+          {
+            "node": "Saved Format",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Saved Format": {
+      "main": [
+        [
+          {
+            "node": "Saved Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET /news/saved-ids": {
+      "main": [
+        [
+          {
+            "node": "Saved IDs Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Saved IDs Query": {
+      "main": [
+        [
+          {
+            "node": "Saved IDs Format",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Saved IDs Format": {
+      "main": [
+        [
+          {
+            "node": "Saved IDs Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "tags": []
+}

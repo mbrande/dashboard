@@ -1,0 +1,737 @@
+{
+  "id": "3LbZEDjAs-K1vBAhoujly",
+  "name": "Wazuh Dashboard Ingestion",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours"
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Every Hour",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://security.home.arpa:55000/security/user/authenticate",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "id": "wazuh-auth",
+      "name": "Wazuh Auth",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        224,
+        0
+      ],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "Binl45738tQW2SQf",
+          "name": "Wazuh API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://security.home.arpa:55000/agents/summary/status",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Wazuh Auth').item.json.data.token }}"
+            }
+          ]
+        },
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "id": "get-agents",
+      "name": "Get Agents",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        0
+      ],
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "url": "https://security.home.arpa:55000/manager/stats",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Wazuh Auth').item.json.data.token }}"
+            }
+          ]
+        },
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "id": "get-alerts",
+      "name": "Get Alerts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        0
+      ],
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get agents and stats data\nconst agents = $('Get Agents').first().json;\nconst stats = $('Get Alerts').first().json;\n\n// Agent counts\nconst conn = agents.data?.connection || {};\nconst totalAgents = conn.total || 0;\nconst activeAgents = conn.active || 0;\n\n// Get current hour's alerts from manager stats\nconst hours = stats.data?.affected_items || [];\nconst currentHour = new Date().getHours();\n// Find the matching hour entry, or use the latest\nconst hourData = hours.find(h => h.hour === currentHour) || hours[hours.length - 1] || {};\nconst alerts = hourData.alerts || [];\n\n// Count totals by severity level\n// Wazuh levels: 0-3 low, 4-7 medium, 8-11 high, 12+ critical\nlet totalAlerts = 0, critical = 0, high = 0, medium = 0;\nlet topRule = { sigid: null, times: 0 };\n\nfor (const a of alerts) {\n  const times = a.times || 0;\n  const level = a.level || 0;\n  totalAlerts += times;\n\n  if (level >= 12) critical += times;\n  else if (level >= 8) high += times;\n  else if (level >= 4) medium += times;\n\n  if (times > topRule.times) {\n    topRule = { sigid: a.sigid, times: times };\n  }\n}\n\nreturn [{\n  json: {\n    total_alerts: totalAlerts,\n    critical_alerts: critical,\n    high_alerts: high,\n    medium_alerts: medium,\n    agent_count: totalAgents,\n    agents_active: activeAgents,\n    top_rule_id: topRule.sigid ? String(topRule.sigid) : null,\n    top_rule_desc: null,\n    raw_json: JSON.stringify({ agents: agents.data, stats: hourData })\n  }\n}];"
+      },
+      "id": "normalize",
+      "name": "Normalize Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO wazuh_snapshots (total_alerts, critical_alerts, high_alerts, medium_alerts, agent_count, agents_active, top_rule_id, top_rule_desc, raw_json) VALUES ({{ $json.total_alerts }}, {{ $json.critical_alerts }}, {{ $json.high_alerts }}, {{ $json.medium_alerts }}, {{ $json.agent_count }}, {{ $json.agents_active }}, '{{ $json.top_rule_id }}', '{{ $json.top_rule_desc }}', '{{ $json.raw_json }}')",
+        "options": {}
+      },
+      "id": "mysql-insert",
+      "name": "Insert Snapshot",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        1100,
+        0
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "9io5uj6IpYHlzMgX",
+          "name": "MySQL - Home DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://security.home.arpa:55000/agents?select=id,name,os.platform,status&limit=50",
+        "options": {
+          "allowUnauthorizedCerts": true
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Wazuh Auth').item.json.data.token }}"
+            }
+          ]
+        }
+      },
+      "id": "get-agent-list",
+      "name": "Get Agent List",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const agents = $('Get Agent List').first().json.data.affected_items || [];\nreturn agents.map(a => ({\n  json: {\n    agent_id: a.id,\n    agent_name: a.name,\n    platform: a.os?.platform || 'unknown',\n    status: a.status || 'unknown'\n  }\n}));"
+      },
+      "id": "split-agents",
+      "name": "Split Agents",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=INSERT INTO wazuh_agents (agent_id, agent_name, platform, status) VALUES ('{{ $json.agent_id }}', '{{ $json.agent_name }}', '{{ $json.platform }}', '{{ $json.status }}') ON DUPLICATE KEY UPDATE agent_name='{{ $json.agent_name }}', platform='{{ $json.platform }}', status='{{ $json.status }}', last_seen=NOW()"
+      },
+      "id": "upsert-agent",
+      "name": "Upsert Agent",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        880,
+        300
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "9io5uj6IpYHlzMgX",
+          "name": "MySQL - Home DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://security.home.arpa:55000/syscheck/{{ $json.agent_id }}?limit=100&sort=-date",
+        "options": {
+          "allowUnauthorizedCerts": true
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Wazuh Auth').item.json.data.token }}"
+            }
+          ]
+        }
+      },
+      "id": "get-fim-events",
+      "name": "Get FIM Events",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=INSERT INTO wazuh_fim_snapshots (agent_id, agent_name, total_fim_events, recent_fim_events) VALUES ('{{ $json.agent_id }}', '{{ $json.agent_name }}', {{ $json.total_fim_events || 0 }}, {{ $json.recent_fim_events || 0 }})"
+      },
+      "id": "insert-fim-snapshot",
+      "name": "Insert FIM Snapshot",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        1540,
+        200
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "9io5uj6IpYHlzMgX",
+          "name": "MySQL - Home DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=INSERT INTO wazuh_fim_events (agent_id, file_path, event_type, change_count, file_type, md5, sha1, sha256, size, fim_date) VALUES ('{{ $json.agent_id }}', {{ JSON.stringify($json.file_path) }}, '{{ $json.event_type || \"file\" }}', {{ $json.change_count || 0 }}, '{{ $json.file_type || \"file\" }}', '{{ $json.md5 || \"\" }}', '{{ $json.sha1 || \"\" }}', '{{ $json.sha256 || \"\" }}', {{ $json.size || 0 }}, '{{ $json.fim_date || \"\" }}')"
+      },
+      "id": "insert-fim-events",
+      "name": "Insert FIM Events",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        1540,
+        500
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "9io5uj6IpYHlzMgX",
+          "name": "MySQL - Home DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const agents = $('Split Agents').all();\nconst responses = $input.all();\nconst output = [];\n\nfor (let i = 0; i < responses.length; i++) {\n  const agent = agents[i].json;\n  const response = responses[i].json;\n  const totalFim = response.data?.total_affected_items || 0;\n  const recentFim = response.data?.affected_items?.length || 0;\n\n  output.push({\n    json: {\n      agent_id: agent.agent_id,\n      agent_name: agent.agent_name,\n      total_fim_events: totalFim,\n      recent_fim_events: recentFim\n    }\n  });\n}\n\nreturn output;"
+      },
+      "id": "extract-fim-snapshots",
+      "name": "Extract FIM Snapshots",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const agents = $('Split Agents').all();\nconst responses = $input.all();\nconst output = [];\n\nfor (let i = 0; i < responses.length; i++) {\n  const agent = agents[i].json;\n  const response = responses[i].json;\n  const items = response.data?.affected_items || [];\n\n  const limited = items.slice(0, 100);\n  for (const item of limited) {\n    output.push({\n      json: {\n        agent_id: agent.agent_id,\n        file_path: item.file || '',\n        event_type: item.type || 'file',\n        change_count: item.changes || 1,\n        file_type: item.type || 'file',\n        md5: item.md5 || null,\n        sha1: item.sha1 || null,\n        sha256: item.sha256 || null,\n        size: item.size || 0,\n        fim_date: item.date || null\n      }\n    });\n  }\n}\n\nreturn output;"
+      },
+      "id": "extract-fim-events",
+      "name": "Extract FIM Events",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const stats = $('Get Alerts').first().json;\nconst hours = stats.data?.affected_items || [];\nconst output = [];\n\nfor (const h of hours) {\n  const alerts = h.alerts || [];\n  let total = 0, highPlus = 0;\n  for (const a of alerts) {\n    total += a.times || 0;\n    if (a.level >= 7) highPlus += a.times || 0;\n  }\n  output.push({\n    json: {\n      hour: h.hour,\n      total_alerts: total,\n      high_plus_alerts: highPlus,\n      syscheck_events: h.syscheck || 0,\n      firewall_events: h.firewall || 0,\n      total_events: h.events || 0\n    }\n  });\n}\nreturn output;"
+      },
+      "id": "extract-trends",
+      "name": "Extract Hourly Trends",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        -300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=INSERT INTO wazuh_hourly_trends (hour, total_alerts, high_plus_alerts, syscheck_events, firewall_events, total_events) VALUES ({{ $json.hour }}, {{ $json.total_alerts }}, {{ $json.high_plus_alerts }}, {{ $json.syscheck_events }}, {{ $json.firewall_events }}, {{ $json.total_events }})"
+      },
+      "id": "insert-trends",
+      "name": "Insert Trends",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        1100,
+        -300
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "9io5uj6IpYHlzMgX",
+          "name": "MySQL - Home DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const stats = $('Get Alerts').first().json;\nconst hours = stats.data?.affected_items || [];\nconst latest = hours[hours.length - 1] || {};\nconst alerts = latest.alerts || [];\n\n// Get top 15 rules with level > 0, sorted by count\nconst top = alerts\n  .filter(a => a.level > 0)\n  .sort((a, b) => b.times - a.times)\n  .slice(0, 15);\n\nconst ruleIds = top.map(a => a.sigid).join(',');\n\nreturn [{\n  json: {\n    hour: latest.hour || 0,\n    top_rules: top,\n    rule_ids_param: ruleIds\n  }\n}];"
+      },
+      "id": "extract-top-rules",
+      "name": "Extract Top Rules",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        -500
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://security.home.arpa:55000/rules?rule_ids={{ $json.rule_ids_param }}&select=id,description,level,groups",
+        "options": {
+          "allowUnauthorizedCerts": true
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Wazuh Auth').item.json.data.token }}"
+            }
+          ]
+        }
+      },
+      "id": "fetch-rule-descs",
+      "name": "Fetch Rule Descriptions",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        -500
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const topRulesData = $('Extract Top Rules').first().json;\nconst hour = topRulesData.hour;\nconst topRules = topRulesData.top_rules;\nconst rulesResponse = $('Fetch Rule Descriptions').first().json;\nconst ruleDescs = rulesResponse.data?.affected_items || [];\n\n// Build a map of rule_id -> description/groups\nconst descMap = {};\nfor (const r of ruleDescs) {\n  descMap[r.id] = {\n    description: r.description || '',\n    level: r.level || 0,\n    groups: (r.groups || []).slice(0, 5).join(',')\n  };\n}\n\nconst output = [];\nfor (const rule of topRules) {\n  const desc = descMap[rule.sigid] || {};\n  output.push({\n    json: {\n      hour: hour,\n      rule_id: rule.sigid,\n      rule_desc: (desc.description || 'Unknown').replace(/'/g, \"''\"),\n      rule_level: desc.level || rule.level,\n      rule_groups: (desc.groups || '').replace(/'/g, \"''\"),\n      hit_count: rule.times\n    }\n  });\n}\nreturn output;"
+      },
+      "id": "merge-rule-data",
+      "name": "Merge Rule Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        -500
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=INSERT INTO wazuh_rule_stats (hour, rule_id, rule_desc, rule_level, rule_groups, hit_count) VALUES ({{ $json.hour }}, {{ $json.rule_id }}, '{{ $json.rule_desc }}', {{ $json.rule_level }}, '{{ $json.rule_groups }}', {{ $json.hit_count }})"
+      },
+      "id": "insert-rule-stats",
+      "name": "Insert Rule Stats",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        1540,
+        -500
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "9io5uj6IpYHlzMgX",
+          "name": "MySQL - Home DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const agents = $('Split Agents').all();\nconst responses = $input.all();\nconst output = [];\n\nconst criticalPaths = ['/etc/', '/usr/bin/', '/usr/sbin/', '/usr/local/bin/', '/usr/local/sbin/',\n  '/boot/', '/root/', '/var/spool/cron', '/var/spool/at',\n  'HKEY_LOCAL_MACHINE\\\\Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Run',\n  'HKEY_LOCAL_MACHINE\\\\System\\\\CurrentControlSet\\\\Services',\n  '/Library/LaunchDaemons/', '/Library/LaunchAgents/'];\n\nfor (let i = 0; i < responses.length; i++) {\n  const agent = agents[i].json;\n  const response = responses[i].json;\n  const items = response.data?.affected_items || [];\n\n  for (const item of items) {\n    const path = item.file || '';\n    const isCritical = criticalPaths.some(cp => path.includes(cp));\n    if (isCritical) {\n      output.push({\n        json: {\n          agent_id: agent.agent_id,\n          agent_name: agent.agent_name,\n          file_path: path.replace(/'/g, \"''\"),\n          change_count: item.changes || 1,\n          md5: item.md5 || '',\n          sha256: item.sha256 || '',\n          size: item.size || 0,\n          fim_date: item.date || ''\n        }\n      });\n    }\n  }\n}\n\nif (output.length === 0) {\n  return [{json: {_empty: true}}];\n}\nreturn output;"
+      },
+      "id": "extract-critical-fim",
+      "name": "Extract Critical FIM",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        700
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "not-empty",
+              "leftValue": "={{ $json._empty }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "notTrue"
+              }
+            }
+          ]
+        }
+      },
+      "id": "has-critical-fim",
+      "name": "Has Critical FIM?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1540,
+        700
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=INSERT INTO wazuh_critical_fim (agent_id, agent_name, file_path, change_count, md5, sha256, size, fim_date) VALUES ('{{ $json.agent_id }}', '{{ $json.agent_name }}', '{{ $json.file_path }}', {{ $json.change_count || 0 }}, '{{ $json.md5 }}', '{{ $json.sha256 }}', {{ $json.size || 0 }}, '{{ $json.fim_date }}')"
+      },
+      "id": "insert-critical-fim",
+      "name": "Insert Critical FIM",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        1760,
+        700
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "9io5uj6IpYHlzMgX",
+          "name": "MySQL - Home DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "DELETE FROM wazuh_fim_events WHERE captured_at < DATE_SUB(NOW(), INTERVAL 30 DAY); DELETE FROM wazuh_critical_fim WHERE captured_at < DATE_SUB(NOW(), INTERVAL 30 DAY); DELETE FROM wazuh_fim_snapshots WHERE captured_at < DATE_SUB(NOW(), INTERVAL 30 DAY); DELETE FROM wazuh_hourly_trends WHERE captured_at < DATE_SUB(NOW(), INTERVAL 90 DAY); DELETE FROM wazuh_rule_stats WHERE captured_at < DATE_SUB(NOW(), INTERVAL 90 DAY); DELETE FROM wazuh_snapshots WHERE captured_at < DATE_SUB(NOW(), INTERVAL 90 DAY);"
+      },
+      "id": "cleanup-old-data",
+      "name": "Cleanup Old Data",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        220,
+        -150
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "9io5uj6IpYHlzMgX",
+          "name": "MySQL - Home DB"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every Hour": {
+      "main": [
+        [
+          {
+            "node": "Wazuh Auth",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Cleanup Old Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wazuh Auth": {
+      "main": [
+        [
+          {
+            "node": "Get Agents",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Agents": {
+      "main": [
+        [
+          {
+            "node": "Get Alerts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Alerts": {
+      "main": [
+        [
+          {
+            "node": "Normalize Data",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Extract Hourly Trends",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Extract Top Rules",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Data": {
+      "main": [
+        [
+          {
+            "node": "Insert Snapshot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Snapshot": {
+      "main": [
+        [
+          {
+            "node": "Get Agent List",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Agent List": {
+      "main": [
+        [
+          {
+            "node": "Split Agents",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Agents": {
+      "main": [
+        [
+          {
+            "node": "Upsert Agent",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get FIM Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert Agent": {
+      "main": [
+        []
+      ]
+    },
+    "Get FIM Events": {
+      "main": [
+        [
+          {
+            "node": "Extract FIM Snapshots",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Extract FIM Events",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Extract Critical FIM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert FIM Snapshot": {
+      "main": [
+        []
+      ]
+    },
+    "Extract FIM Snapshots": {
+      "main": [
+        [
+          {
+            "node": "Insert FIM Snapshot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract FIM Events": {
+      "main": [
+        [
+          {
+            "node": "Insert FIM Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert FIM Events": {
+      "main": [
+        []
+      ]
+    },
+    "Extract Hourly Trends": {
+      "main": [
+        [
+          {
+            "node": "Insert Trends",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Trends": {
+      "main": [
+        []
+      ]
+    },
+    "Extract Top Rules": {
+      "main": [
+        [
+          {
+            "node": "Fetch Rule Descriptions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Rule Descriptions": {
+      "main": [
+        [
+          {
+            "node": "Merge Rule Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Rule Data": {
+      "main": [
+        [
+          {
+            "node": "Insert Rule Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Rule Stats": {
+      "main": [
+        []
+      ]
+    },
+    "Extract Critical FIM": {
+      "main": [
+        [
+          {
+            "node": "Has Critical FIM?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Critical FIM?": {
+      "main": [
+        [
+          {
+            "node": "Insert Critical FIM",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Insert Critical FIM": {
+      "main": [
+        []
+      ]
+    },
+    "Cleanup Old Data": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "tags": []
+}

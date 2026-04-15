@@ -1,0 +1,256 @@
+{
+  "id": "724H9997cQ5wbb5s",
+  "name": "News Summarizer",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "path": "news/summarize",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "ns-wh",
+      "name": "GET /news/summarize",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "news-summarize"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT a.id, a.title, a.content_snippet, a.topic FROM news_articles a WHERE a.ai_summary IS NULL ORDER BY a.published_at DESC LIMIT 5"
+      },
+      "id": "ns-get",
+      "name": "Get Unsummarized",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        224,
+        0
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "9io5uj6IpYHlzMgX",
+          "name": "MySQL - Home DB"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst articles = $input.all().map(i => i.json).filter(a => a.id);\n\nif (articles.length === 0) {\n  return [{ json: { done: true, processed: 0, remaining: 0 } }];\n}\n\nconst articleList = articles.map((a, i) => \n  `Article ${i} (id=${a.id}, topic=${a.topic}): ${a.title}\\n${a.content_snippet || 'No content available'}`\n).join('\\n\\n---\\n\\n');\n\nconst systemPrompt = `You analyze news articles. For each article, return a JSON object with key \"articles\" containing an array. Each element must have:\n- \"id\": the article id (number)\n- \"summary\": a 2-3 sentence summary explaining what the article is about and why it matters\n- \"relevance_score\": 1-10 rating. BE STRICT with scoring \u2014 most articles should be 4-7. Only give 8-10 to articles that are DIRECTLY about the core topics below.\n- \"tags\": array of up to 5 keyword tags\n\nSTRICT topic scoring:\n- \"ai\": 9-10 ONLY for articles directly about: building AI agents, agentic workflows, AI-assisted coding (vibe coding), using Claude/Cursor/Copilot for development, context window management, AI memory systems, prompt engineering patterns. 6-8 for general LLM news, model releases, AI tools. 3-5 for tangentially related AI content (AI policy, AI art, general tech using AI buzzwords).\n- \"music\": 9-10 for music creation tools, DAW tips, AI music generation. 5-7 for general music discussion.\n- \"computers\": 9-10 for homelab builds, self-hosting guides, networking. 5-7 for general hardware/IT.\n- \"tech\": 9-10 for significant tech news. 5-7 for minor updates.\n\nReturn ONLY valid JSON.`;\n\nconst requestBody = JSON.stringify({\n  model: 'gpt-4o-mini',\n  response_format: { type: 'json_object' },\n  messages: [\n    { role: 'system', content: systemPrompt },\n    { role: 'user', content: articleList }\n  ],\n  temperature: 0.3,\n  max_tokens: 2000\n});\n\nreturn [{ json: { requestBody, articleIds: articles.map(a => a.id), count: articles.length } }];\n"
+      },
+      "id": "ns-build",
+      "name": "Build AI Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "check",
+              "leftValue": "={{ $json.count }}",
+              "rightValue": "0",
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "ns-if",
+      "name": "Has Articles?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        672,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.requestBody }}",
+        "options": {}
+      },
+      "id": "ns-openai",
+      "name": "Call OpenAI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        896,
+        0
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "3hmSfLDh5GvxKdKm",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst aiResponse = $json;\nconst content = aiResponse?.choices?.[0]?.message?.content || '{}';\nlet parsed;\ntry {\n  parsed = JSON.parse(content);\n} catch(e) {\n  return [{ json: { error: 'Failed to parse OpenAI response', raw: content.substring(0, 200) } }];\n}\n\nconst articles = parsed.articles || [];\nconst updates = [];\n\nfor (const a of articles) {\n  if (!a.id) continue;\n  const esc = (v) => v ? \"'\" + String(v).replace(/\\\\/g, '\\\\\\\\').replace(/'/g, \"''\") + \"'\" : 'NULL';\n  const tags = JSON.stringify(a.tags || []);\n  const score = Math.min(10, Math.max(1, parseInt(a.relevance_score) || 5));\n  updates.push(`UPDATE news_articles SET ai_summary = ${esc(a.summary)}, ai_tags = '${tags.replace(/'/g, \"\\\\'\")}', relevance_score = ${score} WHERE id = ${a.id}`);\n}\n\nif (updates.length === 0) {\n  return [{ json: { processed: 0, sql: 'SELECT 1' } }];\n}\n\nreturn [{ json: { processed: updates.length, sql: updates.join(';\\n') } }];\n"
+      },
+      "id": "ns-parse",
+      "name": "Parse + Build Updates",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}"
+      },
+      "id": "ns-update",
+      "name": "Update Articles",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        1344,
+        0
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "9io5uj6IpYHlzMgX",
+          "name": "MySQL - Home DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COUNT(*) as remaining FROM news_articles WHERE ai_summary IS NULL"
+      },
+      "id": "ns-remaining",
+      "name": "Check Remaining",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        1568,
+        0
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "9io5uj6IpYHlzMgX",
+          "name": "MySQL - Home DB"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "GET /news/summarize": {
+      "main": [
+        [
+          {
+            "node": "Get Unsummarized",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Unsummarized": {
+      "main": [
+        [
+          {
+            "node": "Build AI Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build AI Request": {
+      "main": [
+        [
+          {
+            "node": "Has Articles?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Articles?": {
+      "main": [
+        [
+          {
+            "node": "Call OpenAI",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Call OpenAI": {
+      "main": [
+        [
+          {
+            "node": "Parse + Build Updates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse + Build Updates": {
+      "main": [
+        [
+          {
+            "node": "Update Articles",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Articles": {
+      "main": [
+        [
+          {
+            "node": "Check Remaining",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "tags": []
+}

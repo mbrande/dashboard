@@ -1,0 +1,2455 @@
+{
+  "id": "7TXlLTtCu24q5Zym",
+  "name": "Wazuh Dashboard API",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "wazuh/latest",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-latest",
+      "name": "GET /wazuh/latest",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "wazuh-latest"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM wazuh_snapshots ORDER BY captured_at DESC LIMIT 1"
+      },
+      "id": "mysql-latest",
+      "name": "Query Latest",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        220,
+        0
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "9io5uj6IpYHlzMgX",
+          "name": "MySQL - Home DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond-latest",
+      "name": "Respond Latest",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        660,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "wazuh/history",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-history",
+      "name": "GET /wazuh/history",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        250
+      ],
+      "webhookId": "wazuh-history"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT captured_at, total_alerts, critical_alerts, high_alerts, medium_alerts, agents_active FROM wazuh_snapshots ORDER BY captured_at DESC LIMIT 168"
+      },
+      "id": "mysql-history",
+      "name": "Query History",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        220,
+        250
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "9io5uj6IpYHlzMgX",
+          "name": "MySQL - Home DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond-history",
+      "name": "Respond History",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        660,
+        250
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "wazuh/agents",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-agents",
+      "name": "GET /wazuh/agents",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        500
+      ],
+      "webhookId": "wazuh-agents"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT a.agent_id, a.agent_name, a.platform, a.status, a.last_seen, fs.total_fim_events, fs.recent_fim_events, fs.captured_at as fim_captured_at FROM wazuh_agents a LEFT JOIN wazuh_fim_snapshots fs ON a.agent_id = fs.agent_id AND fs.captured_at = (SELECT MAX(captured_at) FROM wazuh_fim_snapshots WHERE agent_id = a.agent_id) ORDER BY a.agent_id"
+      },
+      "id": "mysql-agents",
+      "name": "Query Agents",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        220,
+        500
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "9io5uj6IpYHlzMgX",
+          "name": "MySQL - Home DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond-agents",
+      "name": "Respond Agents",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        660,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "wazuh/fim",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-fim",
+      "name": "GET /wazuh/fim",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        750
+      ],
+      "webhookId": "wazuh-fim"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT e.agent_id, a.agent_name, e.file_path, e.event_type, e.change_count, e.file_type, e.md5, e.sha1, e.sha256, e.size, e.fim_date, e.captured_at FROM wazuh_fim_events e JOIN wazuh_agents a ON e.agent_id = a.agent_id ORDER BY e.fim_date DESC LIMIT 200"
+      },
+      "id": "mysql-fim",
+      "name": "Query FIM Events",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        220,
+        750
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "9io5uj6IpYHlzMgX",
+          "name": "MySQL - Home DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond-fim",
+      "name": "Respond FIM",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        660,
+        750
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "wazuh/rules",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-rules",
+      "name": "GET /wazuh/rules",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        1000
+      ],
+      "webhookId": "wazuh-rules"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT rule_id, rule_desc, rule_level, rule_groups, hit_count, hour, captured_at FROM wazuh_rule_stats WHERE captured_at >= (SELECT MAX(captured_at) - INTERVAL 5 MINUTE FROM wazuh_rule_stats) ORDER BY hit_count DESC"
+      },
+      "id": "mysql-rules",
+      "name": "Query Rules",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        220,
+        1000
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "9io5uj6IpYHlzMgX",
+          "name": "MySQL - Home DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond-rules",
+      "name": "Respond Rules",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        660,
+        1000
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "wazuh/trends",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trends",
+      "name": "GET /wazuh/trends",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        1250
+      ],
+      "webhookId": "wazuh-trends"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT hour, total_alerts, high_plus_alerts, syscheck_events, firewall_events, total_events, captured_at FROM wazuh_hourly_trends WHERE captured_at >= DATE_SUB(NOW(), INTERVAL 7 DAY) ORDER BY captured_at, hour"
+      },
+      "id": "mysql-trends",
+      "name": "Query Trends",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        220,
+        1250
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "9io5uj6IpYHlzMgX",
+          "name": "MySQL - Home DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond-trends",
+      "name": "Respond Trends",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        660,
+        1250
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "wazuh/critical-fim",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-cfim",
+      "name": "GET /wazuh/critical-fim",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        1500
+      ],
+      "webhookId": "wazuh-critical-fim"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT agent_id, agent_name, file_path, change_count, md5, sha256, size, fim_date, captured_at FROM wazuh_critical_fim ORDER BY fim_date DESC LIMIT 200"
+      },
+      "id": "mysql-cfim",
+      "name": "Query Critical FIM",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        220,
+        1500
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "9io5uj6IpYHlzMgX",
+          "name": "MySQL - Home DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond-cfim",
+      "name": "Respond Critical FIM",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        660,
+        1500
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "wazuh/agent-fim",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-agent-fim",
+      "name": "GET /wazuh/agent-fim",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        1750
+      ],
+      "webhookId": "wazuh-agent-fim"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT file_path, event_type, change_count, file_type, md5, sha256, size, fim_date, captured_at FROM wazuh_fim_events WHERE agent_id = '{{ $json.query.id }}' ORDER BY fim_date DESC LIMIT 500"
+      },
+      "id": "mysql-agent-fim",
+      "name": "Query Agent FIM",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        220,
+        1750
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "9io5uj6IpYHlzMgX",
+          "name": "MySQL - Home DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "resp-agent-fim",
+      "name": "Respond Agent FIM",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        440,
+        1750
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "wazuh/agent-critical-fim",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-agent-cfim",
+      "name": "GET /wazuh/agent-critical-fim",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        2000
+      ],
+      "webhookId": "wazuh-agent-cfim"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT file_path, change_count, md5, sha256, size, fim_date, captured_at FROM wazuh_critical_fim WHERE agent_id = '{{ $json.query.id }}' ORDER BY fim_date DESC LIMIT 200"
+      },
+      "id": "mysql-agent-cfim",
+      "name": "Query Agent Critical FIM",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        220,
+        2000
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "9io5uj6IpYHlzMgX",
+          "name": "MySQL - Home DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "resp-agent-cfim",
+      "name": "Respond Agent Critical FIM",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        440,
+        2000
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "wazuh/agent-fim-history",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-agent-fhist",
+      "name": "GET /wazuh/agent-fim-history",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        2250
+      ],
+      "webhookId": "wazuh-agent-fhist"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT total_fim_events, recent_fim_events, captured_at FROM wazuh_fim_snapshots WHERE agent_id = '{{ $json.query.id }}' ORDER BY captured_at DESC LIMIT 168"
+      },
+      "id": "mysql-agent-fhist",
+      "name": "Query Agent FIM History",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        220,
+        2250
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "9io5uj6IpYHlzMgX",
+          "name": "MySQL - Home DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "resp-agent-fhist",
+      "name": "Respond Agent FIM History",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        440,
+        2250
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "wazuh/agent-sca",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-agent-sca",
+      "name": "GET /wazuh/agent-sca",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        2500
+      ],
+      "webhookId": "wazuh-agent-sca"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://security.home.arpa:55000/security/user/authenticate",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "id": "sca-auth",
+      "name": "SCA Auth",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        2500
+      ],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "Binl45738tQW2SQf",
+          "name": "Wazuh API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://security.home.arpa:55000/sca/{{ $('GET /wazuh/agent-sca').first().json.query.id }}",
+        "options": {
+          "allowUnauthorizedCerts": true
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('SCA Auth').item.json.data.token }}"
+            }
+          ]
+        }
+      },
+      "id": "fetch-sca",
+      "name": "Fetch SCA",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        2500
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const resp = $input.first().json;\nconst items = resp.data?.affected_items || [];\nreturn items.map(i => ({ json: i }));"
+      },
+      "id": "format-sca",
+      "name": "Format SCA",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        2500
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "resp-agent-sca",
+      "name": "Respond Agent SCA",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        880,
+        2500
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "wazuh/agent-sca-fails",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-agent-sca-fails",
+      "name": "GET /wazuh/agent-sca-fails",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        2750
+      ],
+      "webhookId": "wazuh-agent-sca-fails"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://security.home.arpa:55000/security/user/authenticate",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "id": "sca-fails-auth",
+      "name": "SCA Fails Auth",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        2750
+      ],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "Binl45738tQW2SQf",
+          "name": "Wazuh API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://security.home.arpa:55000/sca/{{ $('GET /wazuh/agent-sca-fails').first().json.query.id }}/checks/{{ $('GET /wazuh/agent-sca-fails').first().json.query.policy }}?result=failed&limit=500",
+        "options": {
+          "allowUnauthorizedCerts": true
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('SCA Fails Auth').item.json.data.token }}"
+            }
+          ]
+        }
+      },
+      "id": "fetch-sca-fails",
+      "name": "Fetch SCA Fails",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        2750
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const resp = $input.first().json;\nconst items = resp.data?.affected_items || [];\nreturn items.map(i => ({ json: { title: i.title, result: i.result, remediation: i.remediation, description: i.description, rationale: i.rationale } }));"
+      },
+      "id": "format-sca-fails",
+      "name": "Format SCA Fails",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        2750
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "resp-agent-sca-fails",
+      "name": "Respond Agent SCA Fails",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        880,
+        2750
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "wazuh/agent-ports",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-agent-ports",
+      "name": "GET /wazuh/agent-ports",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        3000
+      ],
+      "webhookId": "wazuh-agent-ports"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://security.home.arpa:55000/security/user/authenticate",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "id": "ports-auth",
+      "name": "Ports Auth",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        3000
+      ],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "Binl45738tQW2SQf",
+          "name": "Wazuh API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://security.home.arpa:55000/syscollector/{{ $('GET /wazuh/agent-ports').first().json.query.id }}/ports?limit=100&state=listening",
+        "options": {
+          "allowUnauthorizedCerts": true
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Ports Auth').item.json.data.token }}"
+            }
+          ]
+        }
+      },
+      "id": "fetch-ports",
+      "name": "Fetch Ports",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        3000
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const resp = $input.first().json;\nconst items = resp.data?.affected_items || [];\nreturn items.map(i => ({ json: { protocol: i.protocol, ip: i.local?.ip, port: i.local?.port, state: i.state, pid: i.pid, process: i.process } }));"
+      },
+      "id": "fmt-ports",
+      "name": "Format Ports",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        3000
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "resp-ports",
+      "name": "Respond Ports",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        880,
+        3000
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "wazuh/agent-processes",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-agent-procs",
+      "name": "GET /wazuh/agent-processes",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        3250
+      ],
+      "webhookId": "wazuh-agent-procs"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://security.home.arpa:55000/security/user/authenticate",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "id": "procs-auth",
+      "name": "Procs Auth",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        3250
+      ],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "Binl45738tQW2SQf",
+          "name": "Wazuh API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://security.home.arpa:55000/syscollector/{{ $('GET /wazuh/agent-processes').first().json.query.id }}/processes?limit=200",
+        "options": {
+          "allowUnauthorizedCerts": true
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Procs Auth').item.json.data.token }}"
+            }
+          ]
+        }
+      },
+      "id": "fetch-procs",
+      "name": "Fetch Processes",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        3250
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const resp = $input.first().json;\nconst items = resp.data?.affected_items || [];\nreturn items.map(i => ({ json: { name: i.name, pid: i.pid, user: i.euser, state: i.state, cmd: i.cmd } }));"
+      },
+      "id": "fmt-procs",
+      "name": "Format Processes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        3250
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "resp-procs",
+      "name": "Respond Processes",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        880,
+        3250
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "wazuh/live-stats",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-live-stats",
+      "name": "GET /wazuh/live-stats",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        3500
+      ],
+      "webhookId": "wazuh-live-stats"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://security.home.arpa:55000/security/user/authenticate",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "id": "live-auth",
+      "name": "Live Auth",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        3500
+      ],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "Binl45738tQW2SQf",
+          "name": "Wazuh API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://security.home.arpa:55000/agents/summary/status",
+        "options": {
+          "allowUnauthorizedCerts": true
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Live Auth').item.json.data.token }}"
+            }
+          ]
+        }
+      },
+      "id": "live-agents",
+      "name": "Live Agents",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        3400
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://security.home.arpa:55000/manager/stats",
+        "options": {
+          "allowUnauthorizedCerts": true
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Live Auth').item.json.data.token }}"
+            }
+          ]
+        }
+      },
+      "id": "live-mgr-stats",
+      "name": "Live Manager Stats",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        3600
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const agentsResp = $('Live Agents').first().json;\nconst statsResp = $('Live Manager Stats').first().json;\n\nconst conn = agentsResp.data?.connection || {};\nconst hours = statsResp.data?.affected_items || [];\n\n// Current hour stats\nconst now = new Date();\nconst currentHour = now.getHours();\nconst hourData = hours.find(h => h.hour === currentHour) || hours[hours.length - 1] || {};\nconst alerts = hourData.alerts || [];\n\nlet total = 0, critical = 0, high = 0, medium = 0;\nconst topRules = [];\n\nfor (const a of alerts) {\n  total += a.times || 0;\n  if (a.level >= 12) critical += a.times || 0;\n  else if (a.level >= 8) high += a.times || 0;\n  else if (a.level >= 4) medium += a.times || 0;\n\n  if (a.level > 0) {\n    topRules.push({ sigid: a.sigid, level: a.level, times: a.times });\n  }\n}\n\ntopRules.sort((a, b) => b.times - a.times);\n\n// All hours for mini trend\nconst hourlyTrend = hours.map(h => {\n  const ha = h.alerts || [];\n  let ht = 0, hh = 0;\n  for (const a of ha) { ht += a.times; if (a.level >= 7) hh += a.times; }\n  return { hour: h.hour, total: ht, high: hh, syscheck: h.syscheck || 0 };\n});\n\nreturn [{\n  json: {\n    agents_total: conn.total || 0,\n    agents_active: conn.active || 0,\n    agents_disconnected: conn.disconnected || 0,\n    total_alerts: total,\n    critical_alerts: critical,\n    high_alerts: high,\n    medium_alerts: medium,\n    top_rules: topRules.slice(0, 15),\n    hourly_trend: hourlyTrend,\n    current_hour: currentHour,\n    timestamp: now.toISOString()\n  }\n}];"
+      },
+      "id": "merge-live",
+      "name": "Merge Live Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        3500
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "resp-live",
+      "name": "Respond Live Stats",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        880,
+        3500
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "wazuh/live-rules",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-lr2",
+      "name": "GET /wazuh/live-rules",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        3800
+      ],
+      "webhookId": "wazuh-live-rules"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://security.home.arpa:9200/wazuh-alerts-*/_search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"size\":0,\"query\":{\"range\":{\"timestamp\":{\"gte\":\"now-1h\"}}},\"aggs\":{\"top_rules\":{\"terms\":{\"field\":\"rule.id\",\"size\":15,\"order\":{\"_count\":\"desc\"}},\"aggs\":{\"agents\":{\"terms\":{\"field\":\"agent.name\",\"size\":20}},\"rule_info\":{\"top_hits\":{\"size\":1,\"_source\":[\"rule.description\",\"rule.level\",\"rule.groups\"]}}}}}}",
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "id": "lr2-query",
+      "name": "Query Indexer Rules",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        3800
+      ],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "qDp9h30lNad93Jy1",
+          "name": "Wazuh Indexer"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst buckets = data.aggregations?.top_rules?.buckets || [];\n\nreturn buckets.map(b => {\n  const hit = b.rule_info?.hits?.hits?.[0]?._source?.rule || {};\n  const agents = (b.agents?.buckets || []).map(a => ({\n    name: a.key,\n    count: a.doc_count\n  }));\n\n  return {\n    json: {\n      rule_id: b.key,\n      rule_desc: hit.description || 'Unknown',\n      rule_level: hit.level || 0,\n      rule_groups: (hit.groups || []).slice(0, 5).join(','),\n      hit_count: b.doc_count,\n      agents: agents,\n      affected_agents: agents.map(a => a.name + '(' + a.count + ')').join(', ')\n    }\n  };\n});"
+      },
+      "id": "lr2-format",
+      "name": "Format Indexer Rules",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        3800
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "lr2-respond",
+      "name": "Respond Live Rules",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        660,
+        3800
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "wazuh/agent-alerts",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-agent-alerts",
+      "name": "GET /wazuh/agent-alerts",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        4100
+      ],
+      "webhookId": "wazuh-agent-alerts"
+    },
+    {
+      "parameters": {
+        "jsCode": "const agentName = $('GET /wazuh/agent-alerts').first().json.query.name;\nconst query = {\n  size: 0,\n  query: {bool: {must: [\n    {range: {timestamp: {gte: \"now-24h\"}}},\n    {term: {\"agent.name\": agentName}}\n  ]}},\n  aggs: {\n    by_rule: {\n      terms: {field: \"rule.id\", size: 15, order: {_count: \"desc\"}},\n      aggs: {info: {top_hits: {size: 1, _source: [\"rule.description\", \"rule.level\", \"rule.groups\"]}}}\n    },\n    by_level: {\n      range: {field: \"rule.level\", ranges: [\n        {key: \"low\", from: 0, to: 4},\n        {key: \"medium\", from: 4, to: 8},\n        {key: \"high\", from: 8, to: 12},\n        {key: \"critical\", from: 12}\n      ]}\n    },\n    recent: {\n      top_hits: {size: 50, sort: [{timestamp: \"desc\"}], _source: [\"rule.id\", \"rule.description\", \"rule.level\", \"rule.groups\", \"timestamp\"]}\n    },\n    hourly: {\n      date_histogram: {field: \"timestamp\", calendar_interval: \"hour\"},\n      aggs: {high_plus: {filter: {range: {\"rule.level\": {gte: 7}}}}}\n    }\n  }\n};\nreturn [{json: {query: JSON.stringify(query)}}];"
+      },
+      "id": "aa-build-query",
+      "name": "Build Alert Query",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        4100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://security.home.arpa:9200/wazuh-alerts-*/_search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.query }}",
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "id": "aa-fetch",
+      "name": "Fetch Agent Alerts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        4100
+      ],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "qDp9h30lNad93Jy1",
+          "name": "Wazuh Indexer"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $input.first().json;\nconst aggs = d.aggregations || {};\n\nconst severity = {};\nfor (const b of (aggs.by_level?.buckets || [])) {\n  severity[b.key] = b.doc_count;\n}\n\nconst topRules = (aggs.by_rule?.buckets || []).map(b => {\n  const info = b.info?.hits?.hits?.[0]?._source?.rule || {};\n  return {\n    rule_id: b.key,\n    description: info.description || 'Unknown',\n    level: info.level || 0,\n    groups: (info.groups || []).slice(0, 5).join(','),\n    count: b.doc_count\n  };\n});\n\nconst recent = (aggs.recent?.hits?.hits || []).map(h => {\n  const s = h._source;\n  return {\n    rule_id: s.rule?.id,\n    description: s.rule?.description,\n    level: s.rule?.level,\n    timestamp: s.timestamp\n  };\n});\n\nconst hourly = (aggs.hourly?.buckets || []).map(b => ({\n  time: b.key_as_string,\n  total: b.doc_count,\n  high: b.high_plus?.doc_count || 0\n}));\n\nreturn [{json: {\n  total_alerts: d.hits?.total?.value || 0,\n  severity,\n  top_rules: topRules,\n  recent_alerts: recent,\n  hourly: hourly\n}}];"
+      },
+      "id": "aa-format",
+      "name": "Format Agent Alerts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        4100
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "aa-respond",
+      "name": "Respond Agent Alerts",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        880,
+        4100
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "wazuh/live-feed",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-live-feed",
+      "name": "GET /wazuh/live-feed",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        4400
+      ],
+      "webhookId": "wazuh-live-feed"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://security.home.arpa:9200/wazuh-alerts-*/_search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"size\": 30, \"sort\": [{\"timestamp\": \"desc\"}], \"query\": {\"range\": {\"timestamp\": {\"gte\": \"now-5m\"}}}, \"_source\": [\"agent.name\", \"agent.id\", \"rule.id\", \"rule.description\", \"rule.level\", \"rule.groups\", \"data.srcip\", \"data.srcport\", \"data.dstip\", \"data.dstport\", \"data.protocol\", \"data.win.eventdata.destinationIp\", \"data.win.eventdata.destinationHostname\", \"data.win.eventdata.sourceIp\", \"data.win.eventdata.queryName\", \"data.win.eventdata.image\", \"timestamp\"], \"aggs\": {\"eps\": {\"date_histogram\": {\"field\": \"timestamp\", \"fixed_interval\": \"30s\"}}, \"top_src_ips\": {\"terms\": {\"field\": \"data.srcip\", \"size\": 10}}, \"top_dst_ips\": {\"terms\": {\"field\": \"data.dstip\", \"size\": 10}}, \"win_dst_ips\": {\"terms\": {\"field\": \"data.win.eventdata.destinationIp\", \"size\": 10}}, \"dns_queries\": {\"terms\": {\"field\": \"data.win.eventdata.queryName\", \"size\": 10}}, \"connections\": {\"filter\": {\"exists\": {\"field\": \"data.srcip\"}}, \"aggs\": {\"by_src\": {\"terms\": {\"field\": \"data.srcip\", \"size\": 10}, \"aggs\": {\"agents\": {\"terms\": {\"field\": \"agent.name\", \"size\": 5}}}}}}}}",
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "id": "feed-query",
+      "name": "Feed Query",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        4400
+      ],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "qDp9h30lNad93Jy1",
+          "name": "Wazuh Indexer"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $input.first().json;\nconst hits = d.hits?.hits || [];\nconst total = d.hits?.total?.value || 0;\n\nconst alerts = hits.map(h => {\n  const s = h._source;\n  const data = s.data || {};\n  const win = data.win?.eventdata || {};\n  return {\n    agent: s.agent?.name,\n    agent_id: s.agent?.id,\n    rule_id: s.rule?.id,\n    description: s.rule?.description,\n    level: s.rule?.level,\n    groups: (s.rule?.groups || []).slice(0, 3),\n    timestamp: s.timestamp,\n    srcip: data.srcip || win.sourceIp || null,\n    srcport: data.srcport || null,\n    dstip: data.dstip || win.destinationIp || null,\n    dsthost: win.destinationHostname || null,\n    dns_query: win.queryName || null,\n    process: win.image || null\n  };\n});\n\nconst epsBuckets = d.aggregations?.eps?.buckets || [];\nconst recentBuckets = epsBuckets.slice(-4);\nconst avgEps = recentBuckets.length > 0\n  ? (recentBuckets.reduce((sum, b) => sum + b.doc_count, 0) / (recentBuckets.length * 30)).toFixed(1)\n  : 0;\n\nconst srcIps = (d.aggregations?.top_src_ips?.buckets || []).map(b => ({\n  ip: b.key, count: b.doc_count\n}));\n\n// Combine dst IPs from both fields\nconst dstMap = {};\nfor (const b of (d.aggregations?.top_dst_ips?.buckets || [])) {\n  dstMap[b.key] = (dstMap[b.key] || 0) + b.doc_count;\n}\nfor (const b of (d.aggregations?.win_dst_ips?.buckets || [])) {\n  dstMap[b.key] = (dstMap[b.key] || 0) + b.doc_count;\n}\nconst dstIps = Object.entries(dstMap)\n  .map(([ip, count]) => ({ ip, count }))\n  .sort((a, b) => b.count - a.count);\n\nconst dnsQueries = (d.aggregations?.dns_queries?.buckets || []).map(b => ({\n  domain: b.key, count: b.doc_count\n}));\n\n// Connection map: src IP -> which agents\nconst connections = (d.aggregations?.connections?.by_src?.buckets || []).map(b => ({\n  ip: b.key,\n  count: b.doc_count,\n  agents: (b.agents?.buckets || []).map(a => a.key)\n}));\n\nreturn [{json: {\n  total_5min: total,\n  eps: parseFloat(avgEps),\n  alerts,\n  src_ips: srcIps,\n  dst_ips: dstIps,\n  dns_queries: dnsQueries,\n  connections\n}}];"
+      },
+      "id": "feed-format",
+      "name": "Format Feed",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        4400
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "feed-respond",
+      "name": "Respond Feed",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        660,
+        4400
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "wazuh/insights",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-insights",
+      "name": "GET /wazuh/insights",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        4700
+      ],
+      "webhookId": "wazuh-insights"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Just pass through to trigger the chain\nreturn [{ json: { start: true } }];"
+      },
+      "id": "ins-start",
+      "name": "Insights Start",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        4700
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://security.home.arpa:9200/wazuh-alerts-*/_search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"size\":0,\"query\":{\"bool\":{\"must\":[{\"range\":{\"timestamp\":{\"gte\":\"now-24h\"}}},{\"range\":{\"rule.level\":{\"gte\":7}}}],\"must_not\":[{\"terms\":{\"rule.groups\":[\"syscheck\",\"syscheck_entry_modified\",\"syscheck_entry_added\",\"syscheck_entry_deleted\",\"syscheck_file\",\"syscheck_registry\"]}}]}},\"aggs\":{\"by_rule\":{\"terms\":{\"field\":\"rule.id\",\"size\":15,\"order\":{\"_count\":\"desc\"}},\"aggs\":{\"info\":{\"top_hits\":{\"size\":1,\"_source\":[\"rule.description\",\"rule.level\",\"rule.groups\"]}},\"agents\":{\"terms\":{\"field\":\"agent.name\",\"size\":10}}}}}}",
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "id": "ins-high",
+      "name": "Insights High Alerts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        4600
+      ],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "qDp9h30lNad93Jy1",
+          "name": "Wazuh Indexer"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://security.home.arpa:9200/wazuh-alerts-*/_search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"size\": 10, \"sort\": [{\"timestamp\": \"desc\"}], \"query\": {\"bool\": {\"must\": [{\"range\": {\"timestamp\": {\"gte\": \"now-24h\"}}}], \"should\": [{\"terms\": {\"rule.id\": [\"5402\", \"5403\", \"5710\", \"5503\", \"5551\"]}}, {\"wildcard\": {\"rule.description\": \"*CVE*\"}}, {\"match\": {\"rule.groups\": \"authentication_failed\"}}], \"minimum_should_match\": 1}}, \"_source\": [\"agent.name\", \"rule.description\", \"rule.level\", \"rule.id\", \"rule.groups\", \"data.srcip\", \"data.srcuser\", \"data.dstuser\", \"timestamp\"], \"aggs\": {\"priv_esc\": {\"filter\": {\"terms\": {\"rule.id\": [\"5402\", \"5403\", \"5404\", \"5405\"]}}, \"aggs\": {\"by_agent\": {\"terms\": {\"field\": \"agent.name\", \"size\": 10}, \"aggs\": {\"users\": {\"terms\": {\"field\": \"data.srcuser\", \"size\": 5}}}}}}, \"failed_auth\": {\"filter\": {\"bool\": {\"should\": [{\"match\": {\"rule.groups\": \"authentication_failed\"}}, {\"terms\": {\"rule.id\": [\"5710\", \"5503\", \"5551\"]}}], \"minimum_should_match\": 1}}, \"aggs\": {\"by_ip\": {\"terms\": {\"field\": \"data.srcip\", \"size\": 10}, \"aggs\": {\"agents\": {\"terms\": {\"field\": \"agent.name\", \"size\": 5}}}}, \"by_user\": {\"terms\": {\"field\": \"data.srcuser\", \"size\": 10}, \"aggs\": {\"agents\": {\"terms\": {\"field\": \"agent.name\", \"size\": 5}}}}, \"by_agent\": {\"terms\": {\"field\": \"agent.name\", \"size\": 10}}}}, \"cves\": {\"filter\": {\"wildcard\": {\"rule.description\": \"*CVE*\"}}, \"aggs\": {\"by_cve\": {\"terms\": {\"field\": \"rule.description\", \"size\": 10}, \"aggs\": {\"agents\": {\"terms\": {\"field\": \"agent.name\", \"size\": 10}}}}}}, \"src_ips\": {\"filter\": {\"exists\": {\"field\": \"data.srcip\"}}, \"aggs\": {\"by_ip\": {\"terms\": {\"field\": \"data.srcip\", \"size\": 15}, \"aggs\": {\"agents\": {\"terms\": {\"field\": \"agent.name\", \"size\": 5}}}}}}}}",
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "id": "ins-other",
+      "name": "Insights Other",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        4800
+      ],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "qDp9h30lNad93Jy1",
+          "name": "Wazuh Indexer"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst highResp = $('Insights High Alerts').first().json;\nconst otherResp = $('Insights Other').first().json;\n\nconst highAlerts = (highResp.aggregations?.by_rule?.buckets || []).map(b => {\n  const info = b.info?.hits?.hits?.[0]?._source?.rule || {};\n  return {\n    rule_id: b.key,\n    description: info.description || 'Unknown',\n    level: info.level || 0,\n    groups: (info.groups || []).join(','),\n    count: b.doc_count,\n    agents: (b.agents?.buckets || []).map(a => ({ name: a.key, count: a.doc_count }))\n  };\n});\n\nconst aggs = otherResp.aggregations || {};\n\nconst failedAuth = {\n  total: aggs.failed_auth?.doc_count || 0,\n  by_ip: (aggs.failed_auth?.by_ip?.buckets || []).map(b => ({\n    ip: b.key, count: b.doc_count,\n    agents: (b.agents?.buckets || []).map(a => a.key)\n  })),\n  by_user: (aggs.failed_auth?.by_user?.buckets || []).map(b => ({\n    user: b.key, count: b.doc_count,\n    agents: (b.agents?.buckets || []).map(a => a.key)\n  })),\n  by_agent: (aggs.failed_auth?.by_agent?.buckets || []).map(b => ({\n    agent: b.key, count: b.doc_count\n  }))\n};\n\nconst privEsc = {\n  total: aggs.priv_esc?.doc_count || 0,\n  by_agent: (aggs.priv_esc?.by_agent?.buckets || []).map(b => ({\n    agent: b.key, count: b.doc_count,\n    users: (b.users?.buckets || []).map(u => u.key)\n  }))\n};\n\nconst cves = (aggs.cves?.by_cve?.buckets || []).map(b => ({\n  description: b.key,\n  count: b.doc_count,\n  agents: (b.agents?.buckets || []).map(a => ({ name: a.key, count: a.doc_count }))\n}));\n\nconst srcIps = (aggs.src_ips?.by_ip?.buckets || []).map(b => ({\n  ip: b.key, count: b.doc_count,\n  agents: (b.agents?.buckets || []).map(a => a.key)\n}));\n\nreturn [{json: {\n  high_alerts: highAlerts,\n  failed_auth: failedAuth,\n  priv_escalation: privEsc,\n  vulnerabilities: cves,\n  src_ips: srcIps\n}}];\n"
+      },
+      "id": "ins-merge",
+      "name": "Merge Insights",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        4700
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "ins-respond",
+      "name": "Respond Insights",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        880,
+        4700
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "wazuh/failed-logins",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-flogins",
+      "name": "GET /wazuh/failed-logins",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        5000
+      ],
+      "webhookId": "wazuh-failed-logins"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://security.home.arpa:9200/wazuh-alerts-*/_search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"size\": 50, \"sort\": [{\"timestamp\": \"desc\"}], \"query\": {\"bool\": {\"should\": [{\"terms\": {\"rule.id\": [\"5503\", \"5504\", \"5710\", \"5716\", \"5720\", \"5758\", \"5760\", \"60122\"]}}, {\"match\": {\"rule.groups\": \"authentication_failed\"}}], \"minimum_should_match\": 1}}, \"_source\": [\"agent.name\", \"rule.id\", \"rule.description\", \"rule.level\", \"data.srcip\", \"data.srcuser\", \"data.dstuser\", \"data.win.eventdata.targetUserName\", \"data.win.eventdata.ipAddress\", \"timestamp\"], \"aggs\": {\"by_agent\": {\"terms\": {\"field\": \"agent.name\", \"size\": 15}}, \"by_src_ip\": {\"terms\": {\"field\": \"data.srcip\", \"size\": 15, \"order\": {\"_count\": \"desc\"}}, \"aggs\": {\"agents\": {\"terms\": {\"field\": \"agent.name\", \"size\": 5}}}}, \"by_user\": {\"terms\": {\"field\": \"data.dstuser\", \"size\": 10}}, \"over_time\": {\"date_histogram\": {\"field\": \"timestamp\", \"calendar_interval\": \"day\"}}}}",
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "id": "flogins-query",
+      "name": "Query Failed Logins",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        5000
+      ],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "qDp9h30lNad93Jy1",
+          "name": "Wazuh Indexer"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $input.first().json;\nconst total = d.hits?.total?.value || 0;\n\nconst recent = (d.hits?.hits || []).map(h => {\n  const s = h._source;\n  const data = s.data || {};\n  const win = data.win?.eventdata || {};\n  return {\n    agent: s.agent?.name,\n    description: s.rule?.description,\n    level: s.rule?.level,\n    srcip: data.srcip || win.ipAddress || null,\n    user: data.dstuser || data.srcuser || win.targetUserName || null,\n    timestamp: s.timestamp\n  };\n});\n\nconst aggs = d.aggregations || {};\nconst by_agent = (aggs.by_agent?.buckets || []).map(b => ({ agent: b.key, count: b.doc_count }));\nconst by_ip = (aggs.by_src_ip?.buckets || []).map(b => ({\n  ip: b.key, count: b.doc_count,\n  agents: (b.agents?.buckets || []).map(a => a.key)\n}));\nconst by_user = (aggs.by_user?.buckets || []).map(b => ({ user: b.key, count: b.doc_count }));\nconst over_time = (aggs.over_time?.buckets || []).map(b => ({\n  date: b.key_as_string, count: b.doc_count\n}));\n\nreturn [{json: { total, recent, by_agent, by_ip, by_user, over_time }}];"
+      },
+      "id": "flogins-format",
+      "name": "Format Failed Logins",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        5000
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "flogins-respond",
+      "name": "Respond Failed Logins",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        660,
+        5000
+      ]
+    },
+    {
+      "parameters": {
+        "path": "wazuh/fim-by-agent",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-fim-agent-chart",
+      "name": "GET /wazuh/fim-by-agent",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        1800
+      ],
+      "webhookId": "wazuh-fim-by-agent"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT a.agent_name, DATE_FORMAT(e.fim_date, '%Y-%m-%d %H:00:00') AS hour, COUNT(*) AS count FROM wazuh_fim_events e JOIN wazuh_agents a ON e.agent_id = a.agent_id WHERE e.fim_date >= NOW() - INTERVAL 24 HOUR GROUP BY a.agent_name, hour ORDER BY hour ASC, a.agent_name ASC"
+      },
+      "id": "mysql-fim-agent-chart",
+      "name": "Query FIM By Agent",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        224,
+        1800
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "9io5uj6IpYHlzMgX",
+          "name": "MySQL - Home DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all().map(i => i.json);\n\n// Build per-agent totals and hourly breakdown\nconst agentTotals = {};\nconst hourlyData = {};\nconst agents = new Set();\n\nfor (const row of rows) {\n  const agent = row.agent_name;\n  const hour = row.hour;\n  const count = parseInt(row.count);\n  \n  agents.add(agent);\n  agentTotals[agent] = (agentTotals[agent] || 0) + count;\n  \n  if (!hourlyData[hour]) hourlyData[hour] = { hour };\n  hourlyData[hour][agent] = count;\n}\n\n// Sort agents by total descending\nconst sortedAgents = Object.entries(agentTotals)\n  .sort((a, b) => b[1] - a[1])\n  .map(([name, total]) => ({ name, total }));\n\n// Build timeline sorted by hour\nconst timeline = Object.values(hourlyData)\n  .sort((a, b) => a.hour.localeCompare(b.hour))\n  .map(entry => {\n    // Format hour for display\n    const d = new Date(entry.hour);\n    const display = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });\n    const result = { time: display };\n    for (const agent of sortedAgents) {\n      result[agent.name] = entry[agent.name] || 0;\n    }\n    return result;\n  });\n\nreturn [{ json: { agents: sortedAgents, timeline, total: rows.reduce((s, r) => s + parseInt(r.count), 0) } }];"
+      },
+      "id": "fmt-fim-agent-chart",
+      "name": "Format FIM By Agent",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        1800
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "resp-fim-agent-chart",
+      "name": "Respond FIM By Agent",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        672,
+        1800
+      ]
+    }
+  ],
+  "connections": {
+    "GET /wazuh/latest": {
+      "main": [
+        [
+          {
+            "node": "Query Latest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Latest": {
+      "main": [
+        [
+          {
+            "node": "Respond Latest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET /wazuh/history": {
+      "main": [
+        [
+          {
+            "node": "Query History",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query History": {
+      "main": [
+        [
+          {
+            "node": "Respond History",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET /wazuh/agents": {
+      "main": [
+        [
+          {
+            "node": "Query Agents",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Agents": {
+      "main": [
+        [
+          {
+            "node": "Respond Agents",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET /wazuh/fim": {
+      "main": [
+        [
+          {
+            "node": "Query FIM Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query FIM Events": {
+      "main": [
+        [
+          {
+            "node": "Respond FIM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET /wazuh/rules": {
+      "main": [
+        [
+          {
+            "node": "Query Rules",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Rules": {
+      "main": [
+        [
+          {
+            "node": "Respond Rules",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET /wazuh/trends": {
+      "main": [
+        [
+          {
+            "node": "Query Trends",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Trends": {
+      "main": [
+        [
+          {
+            "node": "Respond Trends",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET /wazuh/critical-fim": {
+      "main": [
+        [
+          {
+            "node": "Query Critical FIM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Critical FIM": {
+      "main": [
+        [
+          {
+            "node": "Respond Critical FIM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET /wazuh/agent-fim": {
+      "main": [
+        [
+          {
+            "node": "Query Agent FIM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Agent FIM": {
+      "main": [
+        [
+          {
+            "node": "Respond Agent FIM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET /wazuh/agent-critical-fim": {
+      "main": [
+        [
+          {
+            "node": "Query Agent Critical FIM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Agent Critical FIM": {
+      "main": [
+        [
+          {
+            "node": "Respond Agent Critical FIM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET /wazuh/agent-fim-history": {
+      "main": [
+        [
+          {
+            "node": "Query Agent FIM History",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Agent FIM History": {
+      "main": [
+        [
+          {
+            "node": "Respond Agent FIM History",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET /wazuh/agent-sca": {
+      "main": [
+        [
+          {
+            "node": "SCA Auth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SCA Auth": {
+      "main": [
+        [
+          {
+            "node": "Fetch SCA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch SCA": {
+      "main": [
+        [
+          {
+            "node": "Format SCA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format SCA": {
+      "main": [
+        [
+          {
+            "node": "Respond Agent SCA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET /wazuh/agent-sca-fails": {
+      "main": [
+        [
+          {
+            "node": "SCA Fails Auth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SCA Fails Auth": {
+      "main": [
+        [
+          {
+            "node": "Fetch SCA Fails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch SCA Fails": {
+      "main": [
+        [
+          {
+            "node": "Format SCA Fails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format SCA Fails": {
+      "main": [
+        [
+          {
+            "node": "Respond Agent SCA Fails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET /wazuh/agent-ports": {
+      "main": [
+        [
+          {
+            "node": "Ports Auth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ports Auth": {
+      "main": [
+        [
+          {
+            "node": "Fetch Ports",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Ports": {
+      "main": [
+        [
+          {
+            "node": "Format Ports",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Ports": {
+      "main": [
+        [
+          {
+            "node": "Respond Ports",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET /wazuh/agent-processes": {
+      "main": [
+        [
+          {
+            "node": "Procs Auth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Procs Auth": {
+      "main": [
+        [
+          {
+            "node": "Fetch Processes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Processes": {
+      "main": [
+        [
+          {
+            "node": "Format Processes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Processes": {
+      "main": [
+        [
+          {
+            "node": "Respond Processes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET /wazuh/live-stats": {
+      "main": [
+        [
+          {
+            "node": "Live Auth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Live Auth": {
+      "main": [
+        [
+          {
+            "node": "Live Agents",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Live Agents": {
+      "main": [
+        [
+          {
+            "node": "Live Manager Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Live Manager Stats": {
+      "main": [
+        [
+          {
+            "node": "Merge Live Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Live Data": {
+      "main": [
+        [
+          {
+            "node": "Respond Live Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET /wazuh/live-rules": {
+      "main": [
+        [
+          {
+            "node": "Query Indexer Rules",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Indexer Rules": {
+      "main": [
+        [
+          {
+            "node": "Format Indexer Rules",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Indexer Rules": {
+      "main": [
+        [
+          {
+            "node": "Respond Live Rules",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET /wazuh/agent-alerts": {
+      "main": [
+        [
+          {
+            "node": "Build Alert Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Alert Query": {
+      "main": [
+        [
+          {
+            "node": "Fetch Agent Alerts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Agent Alerts": {
+      "main": [
+        [
+          {
+            "node": "Format Agent Alerts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Agent Alerts": {
+      "main": [
+        [
+          {
+            "node": "Respond Agent Alerts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET /wazuh/live-feed": {
+      "main": [
+        [
+          {
+            "node": "Feed Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Feed Query": {
+      "main": [
+        [
+          {
+            "node": "Format Feed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Feed": {
+      "main": [
+        [
+          {
+            "node": "Respond Feed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET /wazuh/insights": {
+      "main": [
+        [
+          {
+            "node": "Insights Start",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insights Start": {
+      "main": [
+        [
+          {
+            "node": "Insights High Alerts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insights High Alerts": {
+      "main": [
+        [
+          {
+            "node": "Insights Other",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insights Other": {
+      "main": [
+        [
+          {
+            "node": "Merge Insights",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Insights": {
+      "main": [
+        [
+          {
+            "node": "Respond Insights",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET /wazuh/failed-logins": {
+      "main": [
+        [
+          {
+            "node": "Query Failed Logins",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Failed Logins": {
+      "main": [
+        [
+          {
+            "node": "Format Failed Logins",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Failed Logins": {
+      "main": [
+        [
+          {
+            "node": "Respond Failed Logins",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET /wazuh/fim-by-agent": {
+      "main": [
+        [
+          {
+            "node": "Query FIM By Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query FIM By Agent": {
+      "main": [
+        [
+          {
+            "node": "Format FIM By Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format FIM By Agent": {
+      "main": [
+        [
+          {
+            "node": "Respond FIM By Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "tags": []
+}

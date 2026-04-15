@@ -1,0 +1,1129 @@
+{
+  "id": "OlXaYyMphOSYhTF0",
+  "name": "Zabbix Dashboard API",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "path": "zabbix/servers",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-zsrv",
+      "name": "GET /zabbix/servers",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "zabbix-servers"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://netmon.home.arpa/zabbix/api_jsonrpc.php",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"jsonrpc\": \"2.0\", \"method\": \"user.login\", \"params\": {\"username\": \"mike\", \"password\": \"REDACTED\"}, \"id\": 1}",
+        "options": {}
+      },
+      "id": "zsrv-auth",
+      "name": "ZSrv Auth",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        224,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "zsrv-resp",
+      "name": "ZSrv Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1520,
+        -32
+      ]
+    },
+    {
+      "parameters": {
+        "path": "zabbix/problems",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-z-problems",
+      "name": "GET /zabbix/problems",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        304
+      ],
+      "webhookId": "zabbix-problems"
+    },
+    {
+      "parameters": {
+        "path": "zabbix/network",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-z-network",
+      "name": "GET /zabbix/network",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        608
+      ],
+      "webhookId": "zabbix-network"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://netmon.home.arpa/zabbix/api_jsonrpc.php",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"jsonrpc\": \"2.0\", \"method\": \"user.login\", \"params\": {\"username\": \"mike\", \"password\": \"REDACTED\"}, \"id\": 1}",
+        "options": {}
+      },
+      "id": "zauth-network",
+      "name": "Z Auth network",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        224,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://netmon.home.arpa/zabbix/api_jsonrpc.php",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({jsonrpc:'2.0',method:'host.get',params:{output:['hostid','name','status'],selectInterfaces:['ip','available'],selectGroups:['name']},auth:$json.result,id:2}) }}",
+        "options": {}
+      },
+      "id": "zcall-network",
+      "name": "Z Call network",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        448,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const hosts = $input.first().json.result || [];\nlet available = 0, unavailable = 0, unknown = 0;\nconst groups = {};\nfor (const h of hosts) {\n  const avail = h.interfaces?.[0]?.available;\n  if (avail === '1') available++;\n  else if (avail === '2') unavailable++;\n  else unknown++;\n  for (const g of (h.groups || [])) {\n    if (!groups[g.name]) groups[g.name] = { total: 0, up: 0, down: 0 };\n    groups[g.name].total++;\n    if (avail === '1') groups[g.name].up++;\n    else if (avail === '2') groups[g.name].down++;\n  }\n}\nconst groupList = Object.entries(groups).map(([name, data]) => ({ name, ...data })).sort((a, b) => b.total - a.total);\nreturn [{ json: { total: hosts.length, available, unavailable, unknown, groups: groupList } }];"
+      },
+      "id": "zfmt-network",
+      "name": "Z Format network",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "zresp-network",
+      "name": "Z Respond network",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        880,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://netmon.home.arpa/zabbix/api_jsonrpc.php",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({jsonrpc:'2.0',method:'host.get',params:{groupids:['2','25','23','24'],output:['hostid','host','name','status'],selectInterfaces:['ip'],selectGroups:['name']},auth:$json.result,id:2}) }}",
+        "options": {}
+      },
+      "id": "zsrv-hosts2",
+      "name": "ZSrv Hosts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        448,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const hosts = $json.result || [];\nconst token = $('ZSrv Auth').item.json.result;\n\nconst body = JSON.stringify({\n  jsonrpc: '2.0',\n  method: 'item.get',\n  params: {\n    groupids: ['2','25','23','24'],\n    output: ['hostid','name','key_','lastvalue','units'],\n    filter: {\n      key_: ['system.cpu.util','vm.memory.utilization','vm.memory.util',\n             'vm.memory.size[total]','vm.memory.size[available]',\n             'system.uptime','system.cpu.load[all,avg1]','system.cpu.load[all,avg5]']\n    }\n  },\n  auth: token,\n  id: 3\n});\n\nreturn [{json: {hosts, body}}];"
+      },
+      "id": "zsrv-prep",
+      "name": "ZSrv Prep",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://netmon.home.arpa/zabbix/api_jsonrpc.php",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.body }}",
+        "options": {}
+      },
+      "id": "zsrv-items2",
+      "name": "ZSrv Items",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const hosts = $('ZSrv Prep').first().json.hosts || [];\nconst items = $json.result || [];\n\nconst hostMap = {};\nfor (const h of hosts) {\n  hostMap[h.hostid] = {\n    hostid: h.hostid, name: h.name,\n    ip: h.interfaces?.[0]?.ip || '',\n    group: h.groups?.[0]?.name || '',\n    cpu: null, memory: null, mem_total: null, mem_available: null,\n    uptime: null, load1: null, load5: null\n  };\n}\n\nfor (const item of items) {\n  const h = hostMap[item.hostid];\n  if (!h) continue;\n  const v = parseFloat(item.lastvalue);\n  if (item.key_ === 'system.cpu.util') h.cpu = Math.round(v * 10) / 10;\n  else if (item.key_ === 'vm.memory.utilization' || item.key_ === 'vm.memory.util') h.memory = Math.round(v * 10) / 10;\n  else if (item.key_ === 'vm.memory.size[total]') h.mem_total = v;\n  else if (item.key_ === 'vm.memory.size[available]') h.mem_available = v;\n  else if (item.key_ === 'system.uptime') h.uptime = v;\n  else if (item.key_ === 'system.cpu.load[all,avg1]') h.load1 = Math.round(v * 100) / 100;\n  else if (item.key_ === 'system.cpu.load[all,avg5]') h.load5 = Math.round(v * 100) / 100;\n}\n\nreturn [{ json: { servers: Object.values(hostMap).sort((a, b) => a.name.localeCompare(b.name)) } }];"
+      },
+      "id": "zsrv-fmt2",
+      "name": "ZSrv Format",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1136,
+        16
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://netmon.home.arpa/zabbix/api_jsonrpc.php",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"jsonrpc\": \"2.0\", \"method\": \"user.login\", \"params\": {\"username\": \"mike\", \"password\": \"REDACTED\"}, \"id\": 1}",
+        "options": {}
+      },
+      "id": "zp-auth",
+      "name": "ZP Auth",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        224,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://netmon.home.arpa/zabbix/api_jsonrpc.php",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({jsonrpc:'2.0',method:'problem.get',params:{output:['eventid','objectid','name','severity','clock','acknowledged'],recent:true,sortfield:'eventid',sortorder:'DESC',limit:50},auth:$json.result,id:2}) }}",
+        "options": {}
+      },
+      "id": "zp-problems",
+      "name": "ZP Get Problems",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        448,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const problems = $json.result || [];\nconst token = $('ZP Auth').item.json.result;\nconst triggerIds = [...new Set(problems.map(p => p.objectid))];\n\nconst body = JSON.stringify({\n  jsonrpc: '2.0',\n  method: 'trigger.get',\n  params: {\n    triggerids: triggerIds,\n    output: ['triggerid'],\n    selectHosts: ['name']\n  },\n  auth: token,\n  id: 3\n});\n\nreturn [{json: {problems, body}}];"
+      },
+      "id": "zp-prep",
+      "name": "ZP Prep",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://netmon.home.arpa/zabbix/api_jsonrpc.php",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.body }}",
+        "options": {}
+      },
+      "id": "zp-triggers",
+      "name": "ZP Get Triggers",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const problems = $('ZP Prep').first().json.problems || [];\nconst triggers = $json.result || [];\n\nconst hostMap = {};\nfor (const t of triggers) {\n  if (t.hosts?.[0]) hostMap[t.triggerid] = t.hosts[0].name;\n}\n\nconst sevLabels = ['N/A','Info','Warning','Average','High','Disaster'];\nconst result = problems.map(p => ({\n  name: p.name,\n  severity: sevLabels[parseInt(p.severity)] || 'Unknown',\n  severity_num: parseInt(p.severity),\n  host: hostMap[p.objectid] || 'Unknown',\n  time: new Date(parseInt(p.clock) * 1000).toISOString(),\n  acknowledged: p.acknowledged === '1'\n}));\n\nreturn [{ json: { problems: result } }];"
+      },
+      "id": "zp-format",
+      "name": "ZP Format",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1104,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "zp-respond",
+      "name": "ZP Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1328,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "path": "zabbix/router",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-zrouter",
+      "name": "GET /zabbix/router",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        920
+      ],
+      "webhookId": "zabbix-router"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://netmon.home.arpa/zabbix/api_jsonrpc.php",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"jsonrpc\": \"2.0\", \"method\": \"user.login\", \"params\": {\"username\": \"mike\", \"password\": \"REDACTED\"}, \"id\": 1}",
+        "options": {}
+      },
+      "id": "zr-auth",
+      "name": "ZR Auth",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        224,
+        920
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://netmon.home.arpa/zabbix/api_jsonrpc.php",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({jsonrpc:'2.0',method:'item.get',params:{hostids:['10628'],output:['itemid','name','key_','lastvalue','units'],limit:200},auth:$json.result,id:2}) }}",
+        "options": {}
+      },
+      "id": "zr-items",
+      "name": "ZR Get Items",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        448,
+        920
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $json.result || [];\n\nconst vals = {};\nfor (const item of items) {\n  vals[item.key_] = item.lastvalue;\n}\n\nconst cpuUser = parseFloat(vals['synoSystem.ssCpuUser'] || '0');\nconst cpuSystem = parseFloat(vals['synoSystem.ssCpuSystem'] || '0');\nconst cpuUsage = Math.round((cpuUser + cpuSystem) * 10) / 10;\nconst memTotal = parseFloat(vals['ucdavis.memory.memTotalReal'] || '0');\nconst memAvail = parseFloat(vals['ucdavis.memory.memAvailReal'] || '0');\nconst memPct = memTotal > 0 ? Math.round((1 - memAvail / memTotal) * 1000) / 10 : null;\n\nreturn [{ json: {\n  name: 'Synology RT6600ax',\n  ip: '192.168.0.1',\n  status: '1',\n  model: vals['synoSystem.modelName'] || '',\n  firmware: vals['synoSystem.version'] || '',\n  cpu: cpuUsage,\n  memory: memPct,\n  mem_total: memTotal,\n  mem_available: memAvail,\n  temperature: parseFloat(vals['synoSystem.temperature'] || '0'),\n  load1: parseFloat(vals['synoSystem.laLoadInt.1'] || '0'),\n  load5: parseFloat(vals['synoSystem.laLoadInt.2'] || '0'),\n  load15: parseFloat(vals['synoSystem.laLoadInt.3'] || '0'),\n  connections: null,\n  uptime: null\n} }];"
+      },
+      "id": "zr-format",
+      "name": "ZR Format",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        920
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "zr-respond",
+      "name": "ZR Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        896,
+        920
+      ]
+    },
+    {
+      "parameters": {
+        "path": "zabbix/router-interfaces",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-zrifaces",
+      "name": "GET /zabbix/router-interfaces",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        1232
+      ],
+      "webhookId": "zabbix-router-interfaces"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://netmon.home.arpa/zabbix/api_jsonrpc.php",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"jsonrpc\": \"2.0\", \"method\": \"user.login\", \"params\": {\"username\": \"mike\", \"password\": \"REDACTED\"}, \"id\": 1}",
+        "options": {}
+      },
+      "id": "zri-auth",
+      "name": "ZRI Auth",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        224,
+        1232
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://netmon.home.arpa/zabbix/api_jsonrpc.php",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({jsonrpc:'2.0',method:'item.get',params:{hostids:['10628'],output:['itemid','name','key_','lastvalue','units'],search:{name:'Packets on Interface'},limit:200},auth:$json.result,id:2}) }}",
+        "options": {}
+      },
+      "id": "zri-items",
+      "name": "ZRI Get Items",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        448,
+        1232
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $json.result || [];\n\n// Group by interface name extracted from key\nconst ifaces = {};\nfor (const item of items) {\n  const match = item.key_.match(/\\[(.+?)\\]/);\n  if (!match) continue;\n  const ifName = match[1];\n  if (!ifaces[ifName]) ifaces[ifName] = { name: ifName, in_bps: null, out_bps: null };\n  \n  if (item.key_.includes('ifHCInOctets')) {\n    ifaces[ifName].in_bps = Math.round(parseFloat(item.lastvalue) * 8);\n  } else if (item.key_.includes('ifHCOutOctets')) {\n    ifaces[ifName].out_bps = Math.round(parseFloat(item.lastvalue) * 8);\n  }\n}\n\n// Sort: main interfaces first, then VLANs\nconst sorted = Object.values(ifaces).sort((a, b) => {\n  const aVlan = a.name.includes('.');\n  const bVlan = b.name.includes('.');\n  if (aVlan !== bVlan) return aVlan ? 1 : -1;\n  return a.name.localeCompare(b.name, undefined, {numeric: true});\n});\n\n// Add status based on traffic\nfor (const iface of sorted) {\n  const hasTraffic = (iface.in_bps && iface.in_bps > 0) || (iface.out_bps && iface.out_bps > 0);\n  iface.status = hasTraffic ? 'up' : 'down';\n}\n\nreturn [{ json: { interfaces: sorted } }];"
+      },
+      "id": "zri-format",
+      "name": "ZRI Format",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        1232
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "zri-respond",
+      "name": "ZRI Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        896,
+        1232
+      ]
+    },
+    {
+      "parameters": {
+        "path": "zabbix/router-traffic",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-zrtraffic",
+      "name": "GET /zabbix/router-traffic",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        1544
+      ],
+      "webhookId": "zabbix-router-traffic"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://netmon.home.arpa/zabbix/api_jsonrpc.php",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"jsonrpc\": \"2.0\", \"method\": \"user.login\", \"params\": {\"username\": \"mike\", \"password\": \"REDACTED\"}, \"id\": 1}",
+        "options": {}
+      },
+      "id": "zrt-auth",
+      "name": "ZRT Auth",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        224,
+        1544
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://netmon.home.arpa/zabbix/api_jsonrpc.php",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({jsonrpc:'2.0',method:'history.get',params:{itemids:['48408','48417'],history:0,sortfield:'clock',sortorder:'ASC',time_from:Math.floor(Date.now()/1000)-10800,limit:500},auth:$json.result,id:2}) }}",
+        "options": {}
+      },
+      "id": "zrt-history",
+      "name": "ZRT Get History",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        448,
+        1544
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const records = $json.result || [];\n\n// Group by clock timestamp\nconst byTime = {};\nfor (const r of records) {\n  const clock = r.clock;\n  if (!byTime[clock]) byTime[clock] = { clock: parseInt(clock), in: 0, out: 0 };\n  const val = Math.round(parseFloat(r.value) * 8); // bytes/s to bits/s\n  if (r.itemid === '48408') byTime[clock].in = val;\n  else if (r.itemid === '48417') byTime[clock].out = val;\n}\n\nconst sorted = Object.values(byTime).sort((a, b) => a.clock - b.clock);\n\nconst history = sorted.map(entry => {\n  const d = new Date(entry.clock * 1000);\n  return {\n    time: d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }),\n    in: entry.in,\n    out: entry.out\n  };\n});\n\nreturn [{ json: { history } }];"
+      },
+      "id": "zrt-format",
+      "name": "ZRT Format",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        1544
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "zrt-respond",
+      "name": "ZRT Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        896,
+        1544
+      ]
+    },
+    {
+      "parameters": {
+        "path": "zabbix/device-traffic",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-zdt",
+      "name": "GET /zabbix/device-traffic",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        1856
+      ],
+      "webhookId": "zabbix-device-traffic"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://netmon.home.arpa/zabbix/api_jsonrpc.php",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"jsonrpc\": \"2.0\", \"method\": \"user.login\", \"params\": {\"username\": \"mike\", \"password\": \"REDACTED\"}, \"id\": 1}",
+        "options": {}
+      },
+      "id": "zdt-auth",
+      "name": "ZDT Auth",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        224,
+        1856
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://netmon.home.arpa/zabbix/api_jsonrpc.php",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({jsonrpc:'2.0',method:'host.get',params:{groupids:['2','25','23','24'],output:['hostid','name'],selectInterfaces:['ip']},auth:$json.result,id:2}) }}",
+        "options": {}
+      },
+      "id": "zdt-hosts",
+      "name": "ZDT Get Hosts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        448,
+        1856
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const hosts = $json.result || [];\nconst token = $('ZDT Auth').item.json.result;\n\nconst body = JSON.stringify({\n  jsonrpc: '2.0',\n  method: 'item.get',\n  params: {\n    groupids: ['2','25','23','24'],\n    output: ['itemid','hostid','name','key_','lastvalue'],\n    search: { key_: 'net.if.' },\n    filter: { status: '0' },\n    limit: 500\n  },\n  auth: token,\n  id: 3\n});\n\nreturn [{json: {hosts, body}}];"
+      },
+      "id": "zdt-prep",
+      "name": "ZDT Prep",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        1856
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://netmon.home.arpa/zabbix/api_jsonrpc.php",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.body }}",
+        "options": {}
+      },
+      "id": "zdt-items",
+      "name": "ZDT Get Items",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        896,
+        1856
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const hosts = $('ZDT Prep').first().json.hosts || [];\nconst items = $json.result || [];\n\nconst hostMap = {};\nfor (const h of hosts) {\n  hostMap[h.hostid] = {\n    hostid: h.hostid,\n    name: h.name,\n    ip: h.interfaces?.[0]?.ip || '',\n    in_bps: 0,\n    out_bps: 0,\n    interface: ''\n  };\n}\n\n// For each host, pick the primary interface (first non-tailscale net.if.in/out without subkey)\nfor (const item of items) {\n  const h = hostMap[item.hostid];\n  if (!h) continue;\n  \n  // Match net.if.in[\"iface\"] or net.if.out[\"iface\"] (no extra subkey like errors/dropped)\n  const inMatch = item.key_.match(/^net\\.if\\.in\\[\"([^\"]+)\"\\]$/);\n  const outMatch = item.key_.match(/^net\\.if\\.out\\[\"([^\"]+)\"\\]$/);\n  \n  if (inMatch) {\n    const iface = inMatch[1];\n    // Skip virtual/tailscale interfaces\n    if (iface.includes('tailscale') || iface.includes('lo')) continue;\n    // Prefer physical interfaces - if we already have one, keep the one with more traffic\n    const val = parseFloat(item.lastvalue) || 0;\n    if (val > h.in_bps || !h.interface) {\n      h.in_bps = val;\n      h.interface = iface;\n    }\n  }\n  if (outMatch) {\n    const iface = outMatch[1];\n    if (iface.includes('tailscale') || iface.includes('lo')) continue;\n    const val = parseFloat(item.lastvalue) || 0;\n    if (val > h.out_bps) {\n      h.out_bps = val;\n    }\n  }\n}\n\n// Filter out hosts with no traffic data and sort by total traffic desc\nconst devices = Object.values(hostMap)\n  .filter(h => h.interface)\n  .sort((a, b) => (b.in_bps + b.out_bps) - (a.in_bps + a.out_bps));\n\nreturn [{ json: { devices } }];"
+      },
+      "id": "zdt-format",
+      "name": "ZDT Format",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        1856
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "zdt-respond",
+      "name": "ZDT Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1344,
+        1856
+      ]
+    }
+  ],
+  "connections": {
+    "GET /zabbix/servers": {
+      "main": [
+        [
+          {
+            "node": "ZSrv Auth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ZSrv Auth": {
+      "main": [
+        [
+          {
+            "node": "ZSrv Hosts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET /zabbix/problems": {
+      "main": [
+        [
+          {
+            "node": "ZP Auth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET /zabbix/network": {
+      "main": [
+        [
+          {
+            "node": "Z Auth network",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Z Auth network": {
+      "main": [
+        [
+          {
+            "node": "Z Call network",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Z Call network": {
+      "main": [
+        [
+          {
+            "node": "Z Format network",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Z Format network": {
+      "main": [
+        [
+          {
+            "node": "Z Respond network",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ZSrv Hosts": {
+      "main": [
+        [
+          {
+            "node": "ZSrv Prep",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ZSrv Prep": {
+      "main": [
+        [
+          {
+            "node": "ZSrv Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ZSrv Items": {
+      "main": [
+        [
+          {
+            "node": "ZSrv Format",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ZSrv Format": {
+      "main": [
+        [
+          {
+            "node": "ZSrv Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ZP Auth": {
+      "main": [
+        [
+          {
+            "node": "ZP Get Problems",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ZP Get Problems": {
+      "main": [
+        [
+          {
+            "node": "ZP Prep",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ZP Prep": {
+      "main": [
+        [
+          {
+            "node": "ZP Get Triggers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ZP Get Triggers": {
+      "main": [
+        [
+          {
+            "node": "ZP Format",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ZP Format": {
+      "main": [
+        [
+          {
+            "node": "ZP Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET /zabbix/router": {
+      "main": [
+        [
+          {
+            "node": "ZR Auth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ZR Auth": {
+      "main": [
+        [
+          {
+            "node": "ZR Get Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ZR Get Items": {
+      "main": [
+        [
+          {
+            "node": "ZR Format",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ZR Format": {
+      "main": [
+        [
+          {
+            "node": "ZR Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET /zabbix/router-interfaces": {
+      "main": [
+        [
+          {
+            "node": "ZRI Auth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ZRI Auth": {
+      "main": [
+        [
+          {
+            "node": "ZRI Get Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ZRI Get Items": {
+      "main": [
+        [
+          {
+            "node": "ZRI Format",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ZRI Format": {
+      "main": [
+        [
+          {
+            "node": "ZRI Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET /zabbix/router-traffic": {
+      "main": [
+        [
+          {
+            "node": "ZRT Auth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ZRT Auth": {
+      "main": [
+        [
+          {
+            "node": "ZRT Get History",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ZRT Get History": {
+      "main": [
+        [
+          {
+            "node": "ZRT Format",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ZRT Format": {
+      "main": [
+        [
+          {
+            "node": "ZRT Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET /zabbix/device-traffic": {
+      "main": [
+        [
+          {
+            "node": "ZDT Auth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ZDT Auth": {
+      "main": [
+        [
+          {
+            "node": "ZDT Get Hosts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ZDT Get Hosts": {
+      "main": [
+        [
+          {
+            "node": "ZDT Prep",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ZDT Prep": {
+      "main": [
+        [
+          {
+            "node": "ZDT Get Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ZDT Get Items": {
+      "main": [
+        [
+          {
+            "node": "ZDT Format",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ZDT Format": {
+      "main": [
+        [
+          {
+            "node": "ZDT Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "tags": []
+}

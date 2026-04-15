@@ -1,0 +1,361 @@
+{
+  "id": "zODJOCXvfegswJFX",
+  "name": "News Ingestion",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 60
+            }
+          ]
+        }
+      },
+      "id": "ni-schedule",
+      "name": "Every 60 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "path": "news/ingest",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "ni-webhook",
+      "name": "GET /news/ingest",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        300
+      ],
+      "webhookId": "news-ingest"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, name, url, source_type, topic FROM news_sources WHERE enabled = 1"
+      },
+      "id": "ni-get-sources",
+      "name": "Get Sources",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        300,
+        0
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "9io5uj6IpYHlzMgX",
+          "name": "MySQL - Home DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, name, url, source_type, topic FROM news_sources WHERE enabled = 1"
+      },
+      "id": "ni-get-sources-wh",
+      "name": "Get Sources WH",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        300,
+        300
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "9io5uj6IpYHlzMgX",
+          "name": "MySQL - Home DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const sources = $input.all().map(i => i.json);\nreturn sources.map(s => ({ json: s }));"
+      },
+      "id": "ni-split-sources",
+      "name": "Split Sources",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        550,
+        150
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "HomeDashboard/1.0 (by /u/homedash)"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "ni-fetch",
+      "name": "Fetch Source",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        800,
+        150
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nfunction simpleHash(str) {\n  let h1 = 5381, h2 = 52711;\n  for (let i = 0; i < str.length; i++) {\n    const ch = str.charCodeAt(i);\n    h1 = ((h1 << 5) + h1 + ch) >>> 0;\n    h2 = ((h2 << 5) + h2 + ch) >>> 0;\n  }\n  const a = h1.toString(16).padStart(8, '0');\n  const b = h2.toString(16).padStart(8, '0');\n  return (a + b + a + b + a + b + a + b).substring(0, 64);\n}\n\nconst results = [];\nconst allInputs = $input.all();\nconst sourceInputs = $('Split Sources').all();\n\nfor (let idx = 0; idx < allInputs.length; idx++) {\n  const item = allInputs[idx];\n  const src = sourceInputs[idx]?.json;\n  if (!src) continue;\n  \n  // The HTTP Response node returns the response in different places\n  // depending on format - could be in .data, or directly in the json\n  const responseData = item.json;\n\n  try {\n    if (src.source_type === 'rss') {\n      // Get the raw text - could be in .data or directly\n      let text = '';\n      if (typeof responseData === 'string') {\n        text = responseData;\n      } else if (typeof responseData.data === 'string') {\n        text = responseData.data;\n      } else {\n        // Try to find XML in the response\n        text = JSON.stringify(responseData);\n      }\n      \n      if (!text.includes('<') || text.length < 100) continue;\n      \n      const itemRegex = /<item[\\s>][\\s\\S]*?<\\/item>|<entry[\\s>][\\s\\S]*?<\\/entry>/gi;\n      let match;\n      let count = 0;\n      while ((match = itemRegex.exec(text)) !== null && count < 20) {\n        const block = match[0];\n        const getTag = (tag) => {\n          const m = block.match(new RegExp(`<${tag}[^>]*>(?:<!\\\\[CDATA\\\\[)?([\\\\s\\\\S]*?)(?:\\\\]\\\\]>)?<\\\\/${tag}>`, 's'));\n          return m ? m[1].trim() : null;\n        };\n        const getAttr = (tag, attr) => {\n          const m = block.match(new RegExp(`<${tag}[^>]*${attr}=\"([^\"]*)\"`, 's'));\n          return m ? m[1] : null;\n        };\n        \n        const title = getTag('title');\n        const link = getTag('link') || getAttr('link', 'href');\n        if (!title || !link) continue;\n        \n        const desc = getTag('description') || getTag('summary') || getTag('content');\n        const pubDate = getTag('pubDate') || getTag('published') || getTag('updated');\n        const author = getTag('creator') || getTag('author') || getTag('dc:creator');\n        const snippet = desc ? desc.replace(/<[^>]*>/g, '').replace(/&[^;]+;/g, ' ').substring(0, 500) : '';\n        \n        let parsedDate = null;\n        if (pubDate) {\n          try { parsedDate = new Date(pubDate).toISOString().slice(0, 19).replace('T', ' '); } catch(e) {}\n        }\n        \n        results.push({\n          title: title.substring(0, 500),\n          url: link,\n          url_hash: simpleHash(link),\n          author: author || null,\n          published_at: parsedDate,\n          content_snippet: snippet,\n          source_id: src.id,\n          topic: src.topic\n        });\n        count++;\n      }\n    } else if (src.source_type === 'reddit') {\n      // Reddit returns JSON - could be parsed already or as string\n      let jsonData = responseData;\n      if (typeof jsonData === 'string') {\n        try { jsonData = JSON.parse(jsonData); } catch(e) { continue; }\n      }\n      \n      // The data might be nested under .data or directly have .data.children\n      const children = jsonData?.data?.children || [];\n      \n      if (children.length === 0) continue;\n      \n      for (const c of children) {\n        const d = c.data;\n        if (!d || d.stickied) continue;\n        \n        const permalink = d.permalink || '';\n        const postUrl = d.is_self ? 'https://www.reddit.com' + permalink : (d.url || 'https://www.reddit.com' + permalink);\n        const urlHash = simpleHash(postUrl);\n        let pubDate = null;\n        if (d.created_utc) {\n          try { pubDate = new Date(d.created_utc * 1000).toISOString().slice(0, 19).replace('T', ' '); } catch(e) {}\n        }\n        \n        results.push({\n          title: (d.title || '').substring(0, 500),\n          url: postUrl,\n          url_hash: urlHash,\n          author: d.author || null,\n          published_at: pubDate,\n          content_snippet: (d.selftext || '').substring(0, 500),\n          source_id: src.id,\n          topic: src.topic\n        });\n      }\n    }\n  } catch (e) {\n    // Skip failed sources\n  }\n}\n\nif (results.length === 0) {\n  return [{ json: { items: [], count: 0 } }];\n}\n\nreturn [{ json: { items: results, count: results.length } }];\n"
+      },
+      "id": "ni-parse",
+      "name": "Parse All Responses",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1050,
+        150
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst items = $json.items || [];\nif (items.length === 0) return [{ json: { items: [], hashQuery: 'SELECT \"none\" as url_hash WHERE 0', noItems: true } }];\n\nconst hashes = items.map(i => \"'\" + i.url_hash + \"'\").join(',');\nreturn [{ json: { items, hashQuery: 'SELECT url_hash FROM news_articles WHERE url_hash IN (' + hashes + ')', noItems: false } }];\n"
+      },
+      "id": "ni-prep-dedup",
+      "name": "Prep Dedup",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1300,
+        150
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.hashQuery }}",
+        "options": {}
+      },
+      "id": "ni-check-existing",
+      "name": "Check Existing",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        1550,
+        150
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "9io5uj6IpYHlzMgX",
+          "name": "MySQL - Home DB"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst allItems = $('Prep Dedup').first().json.items || [];\nif (allItems.length === 0) return [{ json: { count: 0, combinedSQL: 'SELECT 1', message: 'No items' } }];\n\n// Get existing hashes - handle empty result\nconst existingRows = $input.all()\n  .map(i => i.json?.url_hash)\n  .filter(Boolean);\nconst existingSet = new Set(existingRows);\nconst newItems = allItems.filter(item => !existingSet.has(item.url_hash));\n\nif (newItems.length === 0) {\n  return [{ json: { count: 0, combinedSQL: 'SELECT 1', message: 'All articles already seen' } }];\n}\n\n// Build INSERT statements\nconst inserts = newItems.map(item => {\n  const esc = (v) => {\n    if (!v) return 'NULL';\n    return \"'\" + String(v).replace(/\\\\/g, '\\\\\\\\').replace(/'/g, \"''\") + \"'\";\n  };\n  return `INSERT IGNORE INTO news_articles (source_id, title, url, author, published_at, content_snippet, ai_summary, ai_tags, relevance_score, topic, url_hash) VALUES (${item.source_id}, ${esc(item.title)}, ${esc(item.url)}, ${esc(item.author)}, ${item.published_at ? esc(item.published_at) : 'NULL'}, ${esc(item.content_snippet)}, NULL, '[]', 5, ${esc(item.topic)}, ${esc(item.url_hash)})`;\n});\n\n// MySQL can't handle all at once, split into batches of 50\nconst batchSize = 50;\nconst batches = [];\nfor (let i = 0; i < inserts.length; i += batchSize) {\n  batches.push(inserts.slice(i, i + batchSize).join(';\\n'));\n}\n\nreturn [{ json: { count: newItems.length, combinedSQL: batches[0], remainingBatches: batches.slice(1) } }];\n"
+      },
+      "id": "ni-prepare-inserts",
+      "name": "Prepare Inserts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1800,
+        150
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.combinedSQL }}"
+      },
+      "id": "ni-insert",
+      "name": "Insert Articles",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        2050,
+        150
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "9io5uj6IpYHlzMgX",
+          "name": "MySQL - Home DB"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE news_sources SET last_fetched_at = NOW() WHERE enabled = 1; SELECT COUNT(*) as total FROM news_articles"
+      },
+      "id": "ni-finalize",
+      "name": "Finalize",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        2300,
+        150
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "9io5uj6IpYHlzMgX",
+          "name": "MySQL - Home DB"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every 60 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Get Sources",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET /news/ingest": {
+      "main": [
+        [
+          {
+            "node": "Get Sources WH",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Sources": {
+      "main": [
+        [
+          {
+            "node": "Split Sources",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Sources WH": {
+      "main": [
+        [
+          {
+            "node": "Split Sources",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Sources": {
+      "main": [
+        [
+          {
+            "node": "Fetch Source",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Source": {
+      "main": [
+        [
+          {
+            "node": "Parse All Responses",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse All Responses": {
+      "main": [
+        [
+          {
+            "node": "Prep Dedup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Dedup": {
+      "main": [
+        [
+          {
+            "node": "Check Existing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Existing": {
+      "main": [
+        [
+          {
+            "node": "Prepare Inserts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Inserts": {
+      "main": [
+        [
+          {
+            "node": "Insert Articles",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Articles": {
+      "main": [
+        [
+          {
+            "node": "Finalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "staticData": {
+    "node:Every 60 Minutes": {
+      "recurrenceRules": []
+    }
+  },
+  "tags": []
+}
