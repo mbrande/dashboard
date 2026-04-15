@@ -174,7 +174,7 @@ export default function NewsPage() {
   };
 
   return (
-    <div className="news-page">
+    <div className="news-page page-enter">
       <div className="page-toolbar">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div className="news-topic-tabs">

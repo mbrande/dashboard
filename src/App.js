@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, Suspense, lazy } from 'react';
+import { HashRouter, Routes, Route, NavLink, useNavigate } from 'react-router-dom';
 import { useWazuhData } from './hooks/useWazuhData';
+import { useTheme } from './hooks/useTheme';
 import ThreatOverview, { TopRules } from './components/ThreatOverview';
 import { AlertTrendArea } from './components/TrendCharts';
 import AgentGrid from './components/AgentGrid';
@@ -8,16 +10,24 @@ import LiveFeed from './components/LiveFeed';
 import CriticalInsights from './components/CriticalInsights';
 import FailedLogins from './components/FailedLogins';
 import FimByAgent from './components/FimByAgent';
-import ServerMetrics from './components/ServerMetrics';
-import NetworkDashboard from './components/NetworkDashboard';
-import NewsPage from './components/NewsPage';
+import ErrorBoundary from './components/ErrorBoundary';
 import './App.css';
 
-function HomePage({ onNavigate }) {
+// Lazy-loaded pages
+const ServerMetrics = lazy(() => import('./components/ServerMetrics'));
+const NetworkDashboard = lazy(() => import('./components/NetworkDashboard'));
+const NewsPage = lazy(() => import('./components/NewsPage'));
+
+function PageLoader() {
+  return <div className="page-loading"><div className="spinner" /><span>Loading...</span></div>;
+}
+
+function HomePage() {
+  const navigate = useNavigate();
   return (
-    <div className="home-page">
+    <div className="home-page page-enter">
       <div className="home-grid">
-        <div className="home-tile" onClick={() => onNavigate('security')}>
+        <div className="home-tile" onClick={() => navigate('/security')}>
           <div className="home-tile-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="36" height="36">
               <path d="M12 2l7 4v5c0 5.25-3.5 10-7 11.5C8.5 21 5 16.25 5 11V6l7-4z" />
@@ -27,7 +37,7 @@ function HomePage({ onNavigate }) {
           <div className="home-tile-label">Security</div>
           <div className="home-tile-desc">Wazuh alerts, agents & file integrity</div>
         </div>
-        <div className="home-tile" onClick={() => onNavigate('metrics')}>
+        <div className="home-tile" onClick={() => navigate('/metrics')}>
           <div className="home-tile-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="36" height="36">
               <rect x="2" y="3" width="20" height="14" rx="2" /><path d="M8 21h8M12 17v4" />
@@ -36,7 +46,7 @@ function HomePage({ onNavigate }) {
           <div className="home-tile-label">Server Metrics</div>
           <div className="home-tile-desc">Zabbix CPU, memory, problems & network</div>
         </div>
-        <div className="home-tile" onClick={() => onNavigate('network')}>
+        <div className="home-tile" onClick={() => navigate('/network')}>
           <div className="home-tile-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="36" height="36">
               <circle cx="12" cy="12" r="3" />
@@ -46,7 +56,7 @@ function HomePage({ onNavigate }) {
           <div className="home-tile-label">Network</div>
           <div className="home-tile-desc">Synology router traffic & interfaces</div>
         </div>
-        <div className="home-tile" onClick={() => onNavigate('news')}>
+        <div className="home-tile" onClick={() => navigate('/news')}>
           <div className="home-tile-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="36" height="36">
               <path d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V9m2 11a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 12h10" />
@@ -65,12 +75,7 @@ function SecurityPage() {
   const [selectedAgent, setSelectedAgent] = useState(null);
 
   if (loading) {
-    return (
-      <div className="page-loading">
-        <div className="spinner" />
-        <span>Connecting to Wazuh...</span>
-      </div>
-    );
+    return <div className="page-loading"><div className="spinner" /><span>Connecting to Wazuh...</span></div>;
   }
 
   if (error) {
@@ -83,7 +88,6 @@ function SecurityPage() {
     );
   }
 
-  // Build threat overview from live data
   const latest = live ? {
     total_alerts: live.total_alerts,
     critical_alerts: live.critical_alerts,
@@ -93,11 +97,10 @@ function SecurityPage() {
     agent_count: live.agents_total
   } : null;
 
-  // Use live hourly trend for charts, fall back to MySQL trends
   const chartTrends = live?.hourly_trend?.length > 0 ? live.hourly_trend : trends;
 
   return (
-    <div className="security-page">
+    <div className="security-page page-enter">
       <div className="page-toolbar">
         <div className="live-indicator">
           <span className="live-dot" />
@@ -111,21 +114,16 @@ function SecurityPage() {
         <button className="btn btn-outline" onClick={refresh}>Refresh</button>
       </div>
 
-      <ThreatOverview latest={latest} />
-
-      <CriticalInsights />
-
-      <FailedLogins />
-
-      <LiveFeed />
-
-      <AlertTrendArea trends={chartTrends} />
-
-      <FimByAgent />
+      <ErrorBoundary name="Threat Overview"><ThreatOverview latest={latest} /></ErrorBoundary>
+      <ErrorBoundary name="Critical Insights"><CriticalInsights /></ErrorBoundary>
+      <ErrorBoundary name="Failed Logins"><FailedLogins /></ErrorBoundary>
+      <ErrorBoundary name="Live Feed"><LiveFeed /></ErrorBoundary>
+      <ErrorBoundary name="Alert Trends"><AlertTrendArea trends={chartTrends} /></ErrorBoundary>
+      <ErrorBoundary name="FIM by Agent"><FimByAgent /></ErrorBoundary>
 
       <div className="two-col">
-        <TopRules rules={rules} />
-        <AgentGrid agents={agents} onAgentClick={setSelectedAgent} />
+        <ErrorBoundary name="Top Rules"><TopRules rules={rules} /></ErrorBoundary>
+        <ErrorBoundary name="Agent Grid"><AgentGrid agents={agents} onAgentClick={setSelectedAgent} /></ErrorBoundary>
       </div>
 
       {selectedAgent && (
@@ -135,39 +133,66 @@ function SecurityPage() {
   );
 }
 
+function ThemeToggle({ dark, onToggle }) {
+  return (
+    <button className="theme-toggle" onClick={onToggle} title={dark ? 'Light mode' : 'Dark mode'}>
+      {dark ? (
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+          <circle cx="12" cy="12" r="5" /><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+        </svg>
+      ) : (
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+        </svg>
+      )}
+    </button>
+  );
+}
+
 function App() {
-  const [tab, setTab] = useState('home');
+  const [dark, toggleDark] = useTheme();
 
   return (
-    <div className="app">
-      <nav className="nav">
-        <div className="nav-left clickable" onClick={() => setTab('home')}>
-          <div className="nav-logo">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="24" height="24">
-              <path d="M12 2L2 7l10 5 10-5-10-5z" />
-              <path d="M2 17l10 5 10-5" />
-              <path d="M2 12l10 5 10-5" />
-            </svg>
+    <HashRouter>
+      <div className="app">
+        <nav className="nav">
+          <div className="nav-top">
+            <NavLink to="/" className="nav-left clickable">
+              <div className="nav-logo">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="24" height="24">
+                  <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                  <path d="M2 17l10 5 10-5" />
+                  <path d="M2 12l10 5 10-5" />
+                </svg>
+              </div>
+              <span className="nav-title">Home Dashboard</span>
+            </NavLink>
+            <ThemeToggle dark={dark} onToggle={toggleDark} />
           </div>
-          <span className="nav-title">Home Dashboard</span>
-        </div>
-        <div className="nav-tabs">
-          <button className={`nav-tab ${tab === 'home' ? 'active' : ''}`} onClick={() => setTab('home')}>Home</button>
-          <button className={`nav-tab ${tab === 'security' ? 'active' : ''}`} onClick={() => setTab('security')}>Security</button>
-          <button className={`nav-tab ${tab === 'metrics' ? 'active' : ''}`} onClick={() => setTab('metrics')}>Metrics</button>
-          <button className={`nav-tab ${tab === 'network' ? 'active' : ''}`} onClick={() => setTab('network')}>Network</button>
-          <button className={`nav-tab ${tab === 'news' ? 'active' : ''}`} onClick={() => setTab('news')}>News</button>
-        </div>
-      </nav>
+          <div className="nav-bottom">
+            <div className="nav-tabs">
+              <NavLink to="/" end className={({isActive}) => `nav-tab ${isActive ? 'active' : ''}`}>Home</NavLink>
+              <NavLink to="/security" className={({isActive}) => `nav-tab ${isActive ? 'active' : ''}`}>Security</NavLink>
+              <NavLink to="/metrics" className={({isActive}) => `nav-tab ${isActive ? 'active' : ''}`}>Metrics</NavLink>
+              <NavLink to="/network" className={({isActive}) => `nav-tab ${isActive ? 'active' : ''}`}>Network</NavLink>
+              <NavLink to="/news" className={({isActive}) => `nav-tab ${isActive ? 'active' : ''}`}>News</NavLink>
+            </div>
+          </div>
+        </nav>
 
-      <main className="main">
-        {tab === 'home' && <HomePage onNavigate={setTab} />}
-        {tab === 'security' && <SecurityPage />}
-        {tab === 'metrics' && <ServerMetrics />}
-        {tab === 'network' && <NetworkDashboard />}
-        {tab === 'news' && <NewsPage />}
-      </main>
-    </div>
+        <main className="main">
+          <Suspense fallback={<PageLoader />}>
+            <Routes>
+              <Route path="/" element={<ErrorBoundary name="Home"><HomePage /></ErrorBoundary>} />
+              <Route path="/security" element={<ErrorBoundary name="Security"><SecurityPage /></ErrorBoundary>} />
+              <Route path="/metrics" element={<ErrorBoundary name="Metrics"><ServerMetrics /></ErrorBoundary>} />
+              <Route path="/network" element={<ErrorBoundary name="Network"><NetworkDashboard /></ErrorBoundary>} />
+              <Route path="/news" element={<ErrorBoundary name="News"><NewsPage /></ErrorBoundary>} />
+            </Routes>
+          </Suspense>
+        </main>
+      </div>
+    </HashRouter>
   );
 }
 

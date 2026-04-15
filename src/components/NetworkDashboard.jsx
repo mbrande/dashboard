@@ -89,7 +89,7 @@ export default function NetworkDashboard() {
   }
 
   return (
-    <div className="network-page">
+    <div className="network-page page-enter">
       {/* Router overview */}
       {router && (
         <>

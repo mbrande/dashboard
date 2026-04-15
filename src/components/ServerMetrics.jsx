@@ -69,7 +69,7 @@ export default function ServerMetrics() {
   const criticalProblems = problems.filter(p => p.severity_num >= 3);
 
   return (
-    <div className="metrics-page">
+    <div className="metrics-page page-enter">
       {/* Network overview bar */}
       {network && (
         <div className="net-overview">
