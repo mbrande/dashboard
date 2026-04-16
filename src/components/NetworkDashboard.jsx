@@ -124,6 +124,7 @@ export default function NetworkDashboard() {
   const [traffic, setTraffic] = useState([]);
   const [devices, setDevices] = useState([]);
   const [routerStats, setRouterStats] = useState([]);
+  const [pihole, setPihole] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -134,18 +135,21 @@ export default function NetworkDashboard() {
         fetch(`${BASE}/zabbix/router-interfaces`).then(r => r.json()),
         fetch(`${BASE}/zabbix/router-traffic`).then(r => r.json()),
         fetch(`${BASE}/zabbix/device-traffic`).then(r => r.json()),
-        fetch(`${BASE}/zabbix/router-stats`).then(r => r.json())
-      ]).then(([r, ifaces, t, dt, rs]) => {
+        fetch(`${BASE}/zabbix/router-stats`).then(r => r.json()),
+        fetch(`${BASE}/pihole/stats`).then(r => r.json())
+      ]).then(([r, ifaces, t, dt, rs, ph]) => {
         const rd = Array.isArray(r) ? r[0] : r;
         const id = Array.isArray(ifaces) ? (ifaces[0]?.interfaces || ifaces) : (ifaces?.interfaces || []);
         const td = Array.isArray(t) ? (t[0]?.history || t) : (t?.history || []);
         const dd = Array.isArray(dt) ? (dt[0]?.devices || dt) : (dt?.devices || []);
         const rsh = Array.isArray(rs) ? (rs[0]?.history || rs) : (rs?.history || []);
+        const phd = Array.isArray(ph) ? ph[0] : ph;
         setRouter(rd);
         setInterfaces(Array.isArray(id) ? id : []);
         setTraffic(Array.isArray(td) ? td : []);
         setDevices(Array.isArray(dd) ? dd : []);
         setRouterStats(Array.isArray(rsh) ? rsh : []);
+        setPihole(phd);
         setError(null);
         setLoading(false);
       }).catch(err => {
@@ -276,6 +280,95 @@ export default function NetworkDashboard() {
           <DeviceTrafficPanel devices={devices} />
         )}
       </div>
+
+      {/* Pi-hole DNS */}
+      {pihole && pihole.combined && (
+        <>
+          <div className="net-overview" style={{ marginTop: 16 }}>
+            <div className="net-stat">
+              <span className="net-stat-val">{pihole.combined.total_queries?.toLocaleString()}</span>
+              <span className="net-stat-label">DNS Queries</span>
+            </div>
+            <div className="net-stat">
+              <span className="net-stat-val net-down">{pihole.combined.blocked?.toLocaleString()}</span>
+              <span className="net-stat-label">Blocked</span>
+            </div>
+            <div className="net-stat">
+              <span className="net-stat-val">{pihole.combined.percent_blocked?.toFixed(1)}%</span>
+              <span className="net-stat-label">Block Rate</span>
+            </div>
+            <div className="net-stat">
+              <span className="net-stat-val net-up">{pihole.combined.cached?.toLocaleString()}</span>
+              <span className="net-stat-label">Cached</span>
+            </div>
+          </div>
+
+          <div className="two-col">
+            <div className="card">
+              <h2>Top DNS Clients</h2>
+              <div className="device-traffic-list">
+                {pihole.top_clients?.map((c, i) => {
+                  const maxCount = pihole.top_clients[0]?.count || 1;
+                  const pct = (c.count / maxCount) * 100;
+                  return (
+                    <div key={i} className="dt-row">
+                      <div className="dt-bar-bg"><div className="dt-bar" style={{ width: `${pct}%` }} /></div>
+                      <div className="dt-info">
+                        <div className="dt-name-row">
+                          <span className="dt-name">{c.name?.replace('.home.arpa', '') || c.ip}</span>
+                          <span className="dt-ip mono dim">{c.ip}</span>
+                        </div>
+                        <div className="dt-speeds">
+                          <span className="dt-total">{c.count?.toLocaleString()} queries</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="card">
+              <h2>Top Blocked Domains</h2>
+              <div className="device-traffic-list">
+                {pihole.top_blocked?.map((d, i) => {
+                  const maxCount = pihole.top_blocked[0]?.count || 1;
+                  const pct = (d.count / maxCount) * 100;
+                  return (
+                    <div key={i} className="dt-row">
+                      <div className="dt-bar-bg"><div className="dt-bar" style={{ width: `${pct}%`, background: 'var(--red)', opacity: 0.07 }} /></div>
+                      <div className="dt-info">
+                        <div className="dt-name-row">
+                          <span className="dt-name" style={{ fontSize: '0.75rem' }}>{d.domain}</span>
+                        </div>
+                        <div className="dt-speeds">
+                          <span className="dt-total" style={{ color: 'var(--red)' }}>{d.count?.toLocaleString()} blocked</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {pihole.servers?.length > 0 && (
+            <div className="two-col">
+              {pihole.servers.map((s, i) => (
+                <div key={i} className="card" style={{ textAlign: 'center' }}>
+                  <h2>{s.name}</h2>
+                  <div style={{ display: 'flex', justifyContent: 'center', gap: 24, fontSize: '0.8rem' }}>
+                    <div><strong>{s.total?.toLocaleString()}</strong><br /><span className="dim">queries</span></div>
+                    <div><strong style={{ color: 'var(--red)' }}>{s.blocked?.toLocaleString()}</strong><br /><span className="dim">blocked</span></div>
+                    <div><strong>{s.percent_blocked?.toFixed(1)}%</strong><br /><span className="dim">block rate</span></div>
+                    <div><strong style={{ color: 'var(--green)' }}>{s.cached?.toLocaleString()}</strong><br /><span className="dim">cached</span></div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
