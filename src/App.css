@@ -60,6 +60,78 @@ body {
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* Voice Assistant */
+.voice-assistant { position: relative; }
+.voice-btn {
+  background: none; border: none; cursor: pointer; color: var(--text-secondary);
+  padding: 8px; border-radius: 50%; display: flex; align-items: center;
+  transition: all 0.15s;
+}
+.voice-btn:hover { color: var(--text); background: var(--bg-input); }
+.voice-listening { color: var(--red); background: rgba(234,67,53,0.1); }
+.voice-thinking { color: var(--accent); }
+.voice-speaking { color: var(--green); }
+
+.voice-overlay {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.4); z-index: 300;
+  display: flex; align-items: center; justify-content: center;
+  animation: fadeIn 0.15s ease;
+}
+.voice-panel {
+  background: var(--bg-card); border-radius: 20px; padding: 32px 40px;
+  max-width: 500px; width: 90%; text-align: center; position: relative;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+  animation: slideIn 0.2s ease;
+}
+.voice-status {
+  font-size: 0.9rem; font-weight: 500; margin-bottom: 16px;
+  min-height: 24px;
+}
+.voice-transcript {
+  font-size: 0.85rem; color: var(--text); margin-bottom: 12px;
+  text-align: left; line-height: 1.5;
+}
+.voice-reply {
+  font-size: 0.85rem; color: var(--text-secondary); text-align: left;
+  line-height: 1.5; border-top: 1px solid var(--border-light); padding-top: 12px;
+}
+.voice-label {
+  font-weight: 600; color: var(--text); font-size: 0.75rem;
+  text-transform: uppercase; letter-spacing: 0.3px;
+}
+
+.voice-waveform {
+  width: 100%; max-width: 300px; height: 80px;
+  margin: 8px auto 16px; display: block;
+}
+
+.voice-thinking-dots {
+  display: flex; gap: 8px; justify-content: center; margin-bottom: 16px;
+}
+.voice-thinking-dots span {
+  width: 12px; height: 12px; border-radius: 50%; background: var(--accent);
+  animation: thinkBounce 1.4s ease-in-out infinite;
+}
+.voice-thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
+.voice-thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes thinkBounce {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.3; }
+  40% { transform: scale(1); opacity: 1; }
+}
+
+.voice-pulse-ring {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: 120px; height: 120px; border-radius: 50%;
+  border: 2px solid var(--red);
+  animation: voicePulse 1.5s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes voicePulse {
+  0% { transform: translate(-50%, -50%) scale(0.8); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(1.5); opacity: 0; }
+}
+
 /* Alert Bell */
 .alert-bell {
   background: none; border: none; cursor: pointer; color: var(--text-secondary);

@@ -13,6 +13,7 @@ import FimByAgent from './components/FimByAgent';
 import ErrorBoundary from './components/ErrorBoundary';
 import AlertBell from './components/AlertBell';
 import AlertDrawer from './components/AlertDrawer';
+import VoiceAssistant from './components/VoiceAssistant';
 import { useAlerts } from './hooks/useAlerts';
 import './App.css';
 
@@ -178,6 +179,7 @@ function AppContent() {
             <span className="nav-title">Home Dashboard</span>
           </NavLink>
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <VoiceAssistant />
             <AlertBell unread={unread} hasCritical={hasCritical} onClick={handleBellClick} />
             <ThemeToggle dark={dark} onToggle={toggleDark} />
           </div>
