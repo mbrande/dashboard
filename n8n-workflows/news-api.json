@@ -23,7 +23,7 @@
     },
     {
       "parameters": {
-        "jsCode": "\nconst query = $json.query || {};\nconst topic = query.topic || null;\nconst page = parseInt(query.page) || 1;\nconst limit = Math.min(parseInt(query.limit) || 20, 50);\nconst search = query.search || null;\nconst offset = (page - 1) * limit;\n\nlet sql;\n\nif (search) {\n  const searchEsc = search.replace(/'/g, \"''\");\n  const topicWhere = topic ? ` AND a.topic = '${topic.replace(/'/g, \"''\")}'` : '';\n  sql = `SELECT a.id, a.title, a.url, a.author, a.published_at, a.ai_summary, a.ai_tags, a.relevance_score, a.topic, a.content_snippet, s.name as source_name, s.source_type FROM news_articles a JOIN news_sources s ON a.source_id = s.id WHERE MATCH(a.title, a.ai_summary, a.content_snippet) AGAINST('${searchEsc}' IN NATURAL LANGUAGE MODE)${topicWhere} ORDER BY a.relevance_score DESC, a.published_at DESC LIMIT ${limit} OFFSET ${offset}`;\n} else {\n  const topicWhere = topic ? `AND a.topic = '${topic.replace(/'/g, \"''\")}'` : '';\n  // Sort by relevance first (high relevance = more on-topic), then by date\n  sql = `SELECT a.id, a.title, a.url, a.author, a.published_at, a.ai_summary, a.ai_tags, a.relevance_score, a.topic, a.content_snippet, s.name as source_name, s.source_type FROM news_articles a JOIN news_sources s ON a.source_id = s.id WHERE 1=1 ${topicWhere} AND a.relevance_score >= 5 ORDER BY a.relevance_score DESC, a.published_at DESC LIMIT ${limit} OFFSET ${offset}`;\n}\n\nreturn [{ json: { sql, page, limit } }];\n"
+        "jsCode": "\nconst query = $json.query || {};\nconst topic = query.topic || null;\nconst page = parseInt(query.page) || 1;\nconst limit = Math.min(parseInt(query.limit) || 20, 50);\nconst search = query.search || null;\nconst offset = (page - 1) * limit;\n\n// Hide anything older than this in the feed.\nconst AGE_CLAUSE = \"AND a.published_at > NOW() - INTERVAL 7 DAY\";\n\nlet sql, countSql;\n\nif (search) {\n  const searchEsc = search.replace(/'/g, \"''\");\n  const topicWhere = topic ? ` AND a.topic = '${topic.replace(/'/g, \"''\")}'` : '';\n  sql = `SELECT a.id, a.title, a.url, a.author, a.published_at, a.ai_summary, a.ai_tags, a.relevance_score, a.topic, a.content_snippet, s.name as source_name, s.source_type FROM news_articles a JOIN news_sources s ON a.source_id = s.id WHERE MATCH(a.title, a.ai_summary, a.content_snippet) AGAINST('${searchEsc}' IN NATURAL LANGUAGE MODE)${topicWhere} ${AGE_CLAUSE} ORDER BY a.relevance_score DESC, a.published_at DESC LIMIT ${limit} OFFSET ${offset}`;\n  countSql = `SELECT COUNT(*) AS total FROM news_articles a WHERE MATCH(a.title, a.ai_summary, a.content_snippet) AGAINST('${searchEsc}' IN NATURAL LANGUAGE MODE)${topicWhere} ${AGE_CLAUSE}`;\n} else {\n  const topicWhere = topic ? `AND a.topic = '${topic.replace(/'/g, \"''\")}'` : '';\n  sql = `SELECT a.id, a.title, a.url, a.author, a.published_at, a.ai_summary, a.ai_tags, a.relevance_score, a.topic, a.content_snippet, s.name as source_name, s.source_type FROM news_articles a JOIN news_sources s ON a.source_id = s.id WHERE 1=1 ${topicWhere} AND a.relevance_score >= 5 ${AGE_CLAUSE} ORDER BY a.published_at DESC, a.relevance_score DESC LIMIT ${limit} OFFSET ${offset}`;\n  countSql = `SELECT COUNT(*) AS total FROM news_articles a WHERE 1=1 ${topicWhere} AND a.relevance_score >= 5 ${AGE_CLAUSE}`;\n}\n\nreturn [{ json: { sql, countSql, page, limit } }];\n"
       },
       "id": "na-build-query",
       "name": "Build Query",
@@ -57,14 +57,35 @@
     },
     {
       "parameters": {
-        "jsCode": "\nconst articles = $input.all().map(i => {\n  const a = i.json;\n  // Parse ai_tags from JSON string if needed\n  let tags = a.ai_tags;\n  if (typeof tags === 'string') {\n    try { tags = JSON.parse(tags); } catch(e) { tags = []; }\n  }\n  return {\n    ...a,\n    ai_tags: tags || []\n  };\n});\n\nconst meta = $('Build Query').first().json;\nreturn [{ json: { articles, total: articles.length, page: meta.page } }];\n"
+        "operation": "executeQuery",
+        "query": "={{ $('Build Query').first().json.countSql }}"
+      },
+      "id": "na-count",
+      "name": "Count Articles",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        560,
+        0
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "9io5uj6IpYHlzMgX",
+          "name": "MySQL - Home DB"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst articles = $('Query Articles').all().map(i => {\n  const a = i.json;\n  let tags = a.ai_tags;\n  if (typeof tags === 'string') {\n    try { tags = JSON.parse(tags); } catch(e) { tags = []; }\n  }\n  return { ...a, ai_tags: tags || [] };\n});\n\nconst meta = $('Build Query').first().json;\nconst countRow = $input.first()?.json || {};\nconst total = Number(countRow.total ?? countRow['COUNT(*)'] ?? articles.length) || articles.length;\n\nreturn [{ json: { articles, total, page: meta.page } }];\n"
       },
       "id": "na-format",
       "name": "Format Response",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        672,
+        720,
         0
       ]
     },
@@ -636,6 +657,17 @@
       ]
     },
     "Query Articles": {
+      "main": [
+        [
+          {
+            "node": "Count Articles",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Count Articles": {
       "main": [
         [
           {

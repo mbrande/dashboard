@@ -17,6 +17,24 @@ function timeAgo(ts) {
   return `${Math.floor(diff / 86400)}d ago`;
 }
 
+function fmtTs(ts) {
+  if (!ts) return '';
+  return new Date(ts).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+function SeenRange({ first, last }) {
+  if (!first && !last) return null;
+  const sameMoment = first === last;
+  const tip = `First: ${fmtTs(first)}\nLast:  ${fmtTs(last)}`;
+  return (
+    <span className="fl-seen" title={tip}>
+      {sameMoment
+        ? fmtTs(last)
+        : <>last {timeAgo(last)} · first {timeAgo(first)}</>}
+    </span>
+  );
+}
+
 export default function FailedLogins() {
   const [data, setData] = useState(null);
 
@@ -61,6 +79,7 @@ export default function FailedLogins() {
                 <span className="feed-net feed-src">{ip.ip}</span>
                 <span className="fl-arrow">→</span>
                 <span className="fl-agents">{ip.agents?.join(', ')}</span>
+                <SeenRange first={ip.first_seen} last={ip.last_seen} />
                 <span className="fl-count">{ip.count}</span>
               </div>
             ))}
@@ -77,6 +96,7 @@ export default function FailedLogins() {
                   <div className="fl-user-bar-track">
                     <div className="fl-user-bar" style={{ width: `${pct}%` }} />
                   </div>
+                  <SeenRange first={u.first_seen} last={u.last_seen} />
                   <span className="fl-count">{u.count}</span>
                 </div>
               );
@@ -94,6 +114,7 @@ export default function FailedLogins() {
                   <div className="fl-user-bar-track">
                     <div className="fl-user-bar fl-agent-bar" style={{ width: `${pct}%` }} />
                   </div>
+                  <SeenRange first={a.first_seen} last={a.last_seen} />
                   <span className="fl-count">{a.count}</span>
                 </div>
               );

@@ -14,6 +14,10 @@ import ErrorBoundary from './components/ErrorBoundary';
 import AlertBell from './components/AlertBell';
 import AlertDrawer from './components/AlertDrawer';
 import VoiceAssistant from './components/VoiceAssistant';
+import SeverityAlertsModal from './components/SeverityAlertsModal';
+import DashboardAuthEvents from './components/DashboardAuthEvents';
+import NewDeviceToast from './components/NewDeviceToast';
+import { useSSEStatus } from './hooks/useSSE';
 import { useAlerts } from './hooks/useAlerts';
 import './App.css';
 
@@ -77,6 +81,8 @@ function HomePage() {
 function SecurityPage() {
   const { live, rules, trends, agents, loading, error, refresh, lastRefresh } = useWazuhData();
   const [selectedAgent, setSelectedAgent] = useState(null);
+  const [severityFilter, setSeverityFilter] = useState(null);
+  const sseConnected = useSSEStatus();
 
   if (loading) {
     return <div className="page-loading"><div className="spinner" /><span>Connecting to Wazuh...</span></div>;
@@ -92,11 +98,22 @@ function SecurityPage() {
     );
   }
 
+  // Derive severity counts from the same indexer-sourced rules the modal shows.
+  // Thresholds match Wazuh's defaults: CRIT=15, HIGH=12-14, MED=7-11, LOW=0-6.
+  const derived = (rules || []).reduce((acc, r) => {
+    const hits = r.hit_count || 0;
+    acc.total += hits;
+    if (r.rule_level >= 15) acc.critical += hits;
+    else if (r.rule_level >= 12) acc.high += hits;
+    else if (r.rule_level >= 7) acc.medium += hits;
+    return acc;
+  }, { total: 0, critical: 0, high: 0, medium: 0 });
+
   const latest = live ? {
-    total_alerts: live.total_alerts,
-    critical_alerts: live.critical_alerts,
-    high_alerts: live.high_alerts,
-    medium_alerts: live.medium_alerts,
+    total_alerts: derived.total,
+    critical_alerts: derived.critical,
+    high_alerts: derived.high,
+    medium_alerts: derived.medium,
     agents_active: live.agents_active,
     agent_count: live.agents_total
   } : null;
@@ -107,20 +124,21 @@ function SecurityPage() {
     <div className="security-page page-enter">
       <div className="page-toolbar">
         <div className="live-indicator">
-          <span className="live-dot" />
-          <span className="live-text">Live</span>
+          <span className={`live-dot ${sseConnected ? 'live-dot-sse' : ''}`} />
+          <span className="live-text">{sseConnected ? 'Live (SSE)' : 'Live'}</span>
           {lastRefresh && (
             <span className="toolbar-meta">
-              Updated {lastRefresh.toLocaleTimeString()} · refreshes every 60s
+              Updated {lastRefresh.toLocaleTimeString()} · {sseConnected ? 'streaming' : 'refreshes every 60s'}
             </span>
           )}
         </div>
         <button className="btn btn-outline" onClick={refresh}>Refresh</button>
       </div>
 
-      <ErrorBoundary name="Threat Overview"><ThreatOverview latest={latest} /></ErrorBoundary>
+      <ErrorBoundary name="Threat Overview"><ThreatOverview latest={latest} onSeverityClick={setSeverityFilter} trends={chartTrends} /></ErrorBoundary>
       <ErrorBoundary name="Critical Insights"><CriticalInsights /></ErrorBoundary>
       <ErrorBoundary name="Failed Logins"><FailedLogins /></ErrorBoundary>
+      <ErrorBoundary name="Dashboard Auth"><DashboardAuthEvents /></ErrorBoundary>
       <ErrorBoundary name="Live Feed"><LiveFeed /></ErrorBoundary>
       <ErrorBoundary name="Alert Trends"><AlertTrendArea trends={chartTrends} /></ErrorBoundary>
       <ErrorBoundary name="FIM by Agent"><FimByAgent /></ErrorBoundary>
@@ -132,6 +150,14 @@ function SecurityPage() {
 
       {selectedAgent && (
         <AgentDetail agent={selectedAgent} onClose={() => setSelectedAgent(null)} />
+      )}
+
+      {severityFilter && (
+        <SeverityAlertsModal
+          severity={severityFilter}
+          rules={rules}
+          onClose={() => setSeverityFilter(null)}
+        />
       )}
     </div>
   );
@@ -217,6 +243,7 @@ function AppContent() {
             onClose={() => setDrawerOpen(false)}
           />
         )}
+        <NewDeviceToast />
       </div>
   );
 }

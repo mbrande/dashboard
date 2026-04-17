@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import ZabbixProblemStream from './ZabbixProblemStream';
 
 const BASE = process.env.REACT_APP_N8N_BASE_URL;
 
@@ -70,6 +71,7 @@ export default function ServerMetrics() {
 
   return (
     <div className="metrics-page page-enter">
+      <ZabbixProblemStream />
       {/* Network overview bar */}
       {network && (
         <div className="net-overview">

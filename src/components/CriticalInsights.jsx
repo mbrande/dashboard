@@ -2,10 +2,11 @@ import React, { useState, useEffect } from 'react';
 
 const BASE = process.env.REACT_APP_N8N_BASE_URL;
 
+// Wazuh severity: CRIT=15, HIGH=12-14, MED=7-11, LOW=0-6
 const levelColor = (level) => {
-  if (level >= 12) return '#d93025';
-  if (level >= 8) return '#ea4335';
-  if (level >= 5) return '#f9ab00';
+  if (level >= 15) return '#d93025';
+  if (level >= 12) return '#ea4335';
+  if (level >= 7) return '#f9ab00';
   return '#9aa0a6';
 };
 
@@ -141,7 +142,7 @@ export default function CriticalInsights() {
                 <div key={i} className="insight-alert-item">
                   <div className="insight-alert-top">
                     <span className="rule-badge" style={{ color: levelColor(a.level), borderColor: levelColor(a.level) }}>
-                      {a.level >= 12 ? 'CRIT' : a.level >= 8 ? 'HIGH' : 'MED'}
+                      {a.level >= 15 ? 'CRIT' : a.level >= 12 ? 'HIGH' : 'MED'}
                     </span>
                     <span className="insight-alert-desc">{a.description}</span>
                     <span className="insight-alert-count">{a.count}</span>

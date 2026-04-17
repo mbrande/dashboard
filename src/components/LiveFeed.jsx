@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useSSE } from '../hooks/useSSE';
 
 const BASE = process.env.REACT_APP_N8N_BASE_URL;
 
+// Wazuh severity: CRIT=15, HIGH=12-14, MED=7-11, LOW=0-6
 const levelColor = (level) => {
-  if (level >= 12) return '#d93025';
-  if (level >= 8) return '#ea4335';
-  if (level >= 5) return '#f9ab00';
+  if (level >= 15) return '#d93025';
+  if (level >= 12) return '#ea4335';
+  if (level >= 7) return '#f9ab00';
   return '#9aa0a6';
 };
 
@@ -35,6 +37,13 @@ export default function LiveFeed() {
     const interval = setInterval(load, 15000);
     return () => clearInterval(interval);
   }, [paused]);
+
+  // Real-time: SSE pushes new feed snapshots as the broadcaster refreshes.
+  useSSE('wazuh_feed', (data) => {
+    if (paused) return;
+    const obj = Array.isArray(data) ? data[0] : data;
+    if (obj) setFeed(obj);
+  });
 
   if (!feed) return null;
 

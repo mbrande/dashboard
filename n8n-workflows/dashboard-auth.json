@@ -1,0 +1,147 @@
+{
+  "name": "Dashboard Auth Events",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "dashboard-auth/ingest",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-ingest",
+      "name": "POST /dashboard-auth/ingest",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "dashboard-auth-ingest"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body || {};\nconst events = Array.isArray(body.events) ? body.events : [];\n\nconst ddl = \"CREATE TABLE IF NOT EXISTS dashboard_auth_events (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, occurred_at DATETIME NOT NULL, src_ip VARCHAR(45) NOT NULL, method VARCHAR(10), path VARCHAR(512), status SMALLINT NOT NULL, user_agent VARCHAR(512), had_auth TINYINT NOT NULL DEFAULT 0, bytes_sent INT, line_hash CHAR(64) NOT NULL UNIQUE, INDEX idx_occurred (occurred_at), INDEX idx_src_ip (src_ip), INDEX idx_status (status)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4\";\n\nif (events.length === 0) {\n  return [{ json: { sql: ddl + '; SELECT 0 AS inserted', eventCount: 0 } }];\n}\n\nconst esc = (v) => {\n  if (v === null || v === undefined) return 'NULL';\n  return \"'\" + String(v).replace(/\\\\/g, '\\\\\\\\').replace(/'/g, \"''\") + \"'\";\n};\n\nconst values = events.map(e => {\n  return `(${esc(e.occurred_at)}, ${esc(e.src_ip)}, ${esc(e.method)}, ${esc(e.path)}, ${Number(e.status) || 0}, ${esc(e.user_agent)}, ${e.had_auth ? 1 : 0}, ${Number.isFinite(e.bytes_sent) ? e.bytes_sent : 'NULL'}, ${esc(e.line_hash)})`;\n}).join(',\\n');\n\nconst insert = `INSERT IGNORE INTO dashboard_auth_events (occurred_at, src_ip, method, path, status, user_agent, had_auth, bytes_sent, line_hash) VALUES ${values}`;\n\nreturn [{ json: { sql: ddl + ';\\n' + insert, eventCount: events.length } }];\n"
+      },
+      "id": "ingest-build",
+      "name": "Build Ingest SQL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [240, 0]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}"
+      },
+      "id": "ingest-exec",
+      "name": "Run Ingest",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [480, 0],
+      "credentials": {
+        "mySql": {
+          "id": "9io5uj6IpYHlzMgX",
+          "name": "MySQL - Home DB"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const ec = $('Build Ingest SQL').first().json.eventCount || 0;\nreturn [{ json: { ok: true, received: ec } }];\n"
+      },
+      "id": "ingest-fmt",
+      "name": "Format Ingest Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [720, 0]
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              { "name": "Access-Control-Allow-Origin", "value": "*" },
+              { "name": "Content-Type", "value": "application/json" }
+            ]
+          }
+        }
+      },
+      "id": "ingest-resp",
+      "name": "Respond Ingest",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [960, 0]
+    },
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "dashboard-auth/summary",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-summary",
+      "name": "GET /dashboard-auth/summary",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 300],
+      "webhookId": "dashboard-auth-summary"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, occurred_at, src_ip, method, path, status, user_agent, had_auth FROM dashboard_auth_events WHERE status IN (401, 403) AND occurred_at > NOW() - INTERVAL 7 DAY ORDER BY occurred_at DESC LIMIT 500"
+      },
+      "id": "summary-sql",
+      "name": "Fetch Auth Events",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [240, 300],
+      "credentials": {
+        "mySql": {
+          "id": "9io5uj6IpYHlzMgX",
+          "name": "MySQL - Home DB"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all().map(i => i.json).filter(r => r && r.occurred_at);\n\nconst byIp = new Map();\nfor (const r of rows) {\n  const k = r.src_ip;\n  let e = byIp.get(k);\n  if (!e) { e = { ip: k, count: 0, real_attempts: 0, probes: 0, user_agents: new Set(), first_seen: r.occurred_at, last_seen: r.occurred_at }; byIp.set(k, e); }\n  e.count++;\n  if (r.had_auth) e.real_attempts++; else e.probes++;\n  if (r.user_agent) e.user_agents.add(r.user_agent);\n  if (r.occurred_at < e.first_seen) e.first_seen = r.occurred_at;\n  if (r.occurred_at > e.last_seen) e.last_seen = r.occurred_at;\n}\nconst by_ip = [...byIp.values()]\n  .map(e => ({ ...e, user_agents: [...e.user_agents].slice(0, 5) }))\n  .sort((a, b) => b.count - a.count)\n  .slice(0, 20);\n\nconst byPath = new Map();\nfor (const r of rows) {\n  const k = r.path || '(none)';\n  byPath.set(k, (byPath.get(k) || 0) + 1);\n}\nconst by_path = [...byPath.entries()]\n  .map(([path, count]) => ({ path, count }))\n  .sort((a, b) => b.count - a.count)\n  .slice(0, 10);\n\nconst recent = rows.slice(0, 50).map(r => ({\n  id: r.id,\n  occurred_at: r.occurred_at,\n  src_ip: r.src_ip,\n  method: r.method,\n  path: r.path,\n  status: r.status,\n  user_agent: r.user_agent,\n  had_auth: !!r.had_auth\n}));\n\nconst total = rows.length;\nconst real_attempts = rows.filter(r => r.had_auth).length;\nconst probes = total - real_attempts;\n\nreturn [{ json: { total, real_attempts, probes, by_ip, by_path, recent, window_days: 7 } }];\n"
+      },
+      "id": "summary-fmt",
+      "name": "Format Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              { "name": "Access-Control-Allow-Origin", "value": "*" },
+              { "name": "Content-Type", "value": "application/json" }
+            ]
+          }
+        }
+      },
+      "id": "summary-resp",
+      "name": "Respond Summary",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [720, 300]
+    }
+  ],
+  "connections": {
+    "POST /dashboard-auth/ingest": { "main": [[{ "node": "Build Ingest SQL", "type": "main", "index": 0 }]] },
+    "Build Ingest SQL": { "main": [[{ "node": "Run Ingest", "type": "main", "index": 0 }]] },
+    "Run Ingest": { "main": [[{ "node": "Format Ingest Response", "type": "main", "index": 0 }]] },
+    "Format Ingest Response": { "main": [[{ "node": "Respond Ingest", "type": "main", "index": 0 }]] },
+    "GET /dashboard-auth/summary": { "main": [[{ "node": "Fetch Auth Events", "type": "main", "index": 0 }]] },
+    "Fetch Auth Events": { "main": [[{ "node": "Format Summary", "type": "main", "index": 0 }]] },
+    "Format Summary": { "main": [[{ "node": "Respond Summary", "type": "main", "index": 0 }]] }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

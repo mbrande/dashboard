@@ -134,7 +134,7 @@ export default function AgentDetail({ agent, onClose }) {
   const critFiltered = filter ? criticalFim.filter(e => e.file_path?.toLowerCase().includes(filter.toLowerCase())) : criticalFim;
 
   const alertTotal = alerts?.total_alerts || 0;
-  const sevRanges = { critical: [12, 99], high: [8, 11], medium: [4, 7], low: [0, 3] };
+  const sevRanges = { critical: [15, 99], high: [12, 14], medium: [7, 11], low: [0, 6] };
   const filteredRules = sevFilter && alerts?.top_rules
     ? alerts.top_rules.filter(r => r.level >= sevRanges[sevFilter][0] && r.level <= sevRanges[sevFilter][1])
     : (alerts?.top_rules || []);
@@ -361,13 +361,13 @@ export default function AgentDetail({ agent, onClose }) {
                     <div className="agent-rules-list">
                       {filteredRules.map((r, i) => {
                         const maxCount = filteredRules[0].count;
-                        const lc = r.level >= 12 ? '#d93025' : r.level >= 8 ? '#ea4335' : r.level >= 5 ? '#f9ab00' : '#9aa0a6';
+                        const lc = r.level >= 15 ? '#d93025' : r.level >= 12 ? '#ea4335' : r.level >= 7 ? '#f9ab00' : '#9aa0a6';
                         return (
                           <div key={i} className="agent-rule-row">
                             <div className="agent-rule-bar" style={{ width: `${(r.count / maxCount) * 100}%`, backgroundColor: lc, opacity: 0.1 }} />
                             <div className="agent-rule-content">
                               <span className="rule-badge" style={{ color: lc, borderColor: lc }}>
-                                {r.level >= 12 ? 'CRIT' : r.level >= 8 ? 'HIGH' : r.level >= 5 ? 'MED' : 'LOW'}
+                                {r.level >= 15 ? 'CRIT' : r.level >= 12 ? 'HIGH' : r.level >= 7 ? 'MED' : 'LOW'}
                               </span>
                               <span className="agent-rule-desc">{r.description}</span>
                               <span className="agent-rule-count">{r.count.toLocaleString()}</span>
@@ -385,7 +385,7 @@ export default function AgentDetail({ agent, onClose }) {
                     <h3>Recent Alerts{sevFilter ? ` — ${sevFilter}` : ''}</h3>
                     <div className="alert-timeline">
                       {filteredRecent.map((a, i) => {
-                        const lc = a.level >= 12 ? '#d93025' : a.level >= 8 ? '#ea4335' : a.level >= 5 ? '#f9ab00' : '#9aa0a6';
+                        const lc = a.level >= 15 ? '#d93025' : a.level >= 12 ? '#ea4335' : a.level >= 7 ? '#f9ab00' : '#9aa0a6';
                         return (
                           <div key={i} className="alert-timeline-item">
                             <div className="alert-timeline-dot" style={{ backgroundColor: lc }} />

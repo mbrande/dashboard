@@ -1,41 +1,78 @@
 import React from 'react';
+import AnimatedNumber from './AnimatedNumber';
+import Sparkline from './Sparkline';
 
+// Wazuh severity: CRIT=15, HIGH=12-14, MED=7-11, LOW=0-6
 const levelColor = (level) => {
-  if (level >= 12) return '#d93025';
-  if (level >= 8) return '#ea4335';
-  if (level >= 5) return '#f9ab00';
+  if (level >= 15) return '#d93025';
+  if (level >= 12) return '#ea4335';
+  if (level >= 7) return '#f9ab00';
   return '#9aa0a6';
 };
 
 const levelLabel = (level) => {
-  if (level >= 12) return 'CRIT';
-  if (level >= 8) return 'HIGH';
-  if (level >= 5) return 'MED';
+  if (level >= 15) return 'CRIT';
+  if (level >= 12) return 'HIGH';
+  if (level >= 7) return 'MED';
   return 'LOW';
 };
 
-export default function ThreatOverview({ latest }) {
+export default function ThreatOverview({ latest, onSeverityClick, trends }) {
   if (!latest) return null;
 
   const totalHigh = (latest.critical_alerts || 0) + (latest.high_alerts || 0);
+  const handleClick = (key, e) => {
+    // Prevent the native event from bubbling to React's root delegate and
+    // phantom-firing on the modal overlay that mounts on the same click.
+    if (e) { e.stopPropagation(); }
+    if (onSeverityClick) onSeverityClick(key);
+  };
+
+  // Sparkline sources: 24 hourly buckets from trend data
+  const trendArr = Array.isArray(trends) ? trends : [];
+  const totalSpark = trendArr.map(t => t.total || 0);
+  const highSpark = trendArr.map(t => t.high || 0);
+  const medSpark = trendArr.map(t => (t.medium ?? Math.max((t.total || 0) - (t.high || 0), 0)));
 
   return (
     <div className="threat-overview">
-      <div className="threat-card threat-total">
-        <div className="threat-number">{latest.total_alerts?.toLocaleString()}</div>
+      <div
+        className="threat-card threat-total threat-card-clickable"
+        onClick={(e) => handleClick('total', e)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && handleClick('total')}
+      >
+        <div className="threat-number"><AnimatedNumber value={latest.total_alerts || 0} /></div>
         <div className="threat-label">Total Alerts</div>
+        <Sparkline data={totalSpark} color="#1a73e8" />
       </div>
-      <div className="threat-card threat-high">
-        <div className="threat-number">{totalHigh.toLocaleString()}</div>
+      <div
+        className="threat-card threat-high threat-card-clickable"
+        onClick={(e) => handleClick('high', e)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && handleClick('high')}
+      >
+        <div className="threat-number"><AnimatedNumber value={totalHigh} /></div>
         <div className="threat-label">High+ Severity</div>
+        <Sparkline data={highSpark} color="#ea4335" />
       </div>
-      <div className="threat-card threat-medium">
-        <div className="threat-number">{latest.medium_alerts?.toLocaleString()}</div>
+      <div
+        className="threat-card threat-medium threat-card-clickable"
+        onClick={(e) => handleClick('medium', e)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && handleClick('medium')}
+      >
+        <div className="threat-number"><AnimatedNumber value={latest.medium_alerts || 0} /></div>
         <div className="threat-label">Medium</div>
+        <Sparkline data={medSpark} color="#f9ab00" />
       </div>
       <div className="threat-card threat-agents">
         <div className="threat-number">
-          {latest.agents_active}<span className="threat-sub">/{latest.agent_count}</span>
+          <AnimatedNumber value={latest.agents_active || 0} />
+          <span className="threat-sub">/{latest.agent_count || 0}</span>
         </div>
         <div className="threat-label">Agents Active</div>
       </div>

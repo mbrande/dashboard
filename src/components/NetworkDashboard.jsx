@@ -1,5 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import PiholeLiveTail from './PiholeLiveTail';
+import BandwidthTicker from './BandwidthTicker';
+import PlexNowPlaying from './PlexNowPlaying';
+import { useSSE } from '../hooks/useSSE';
 
 const BASE = process.env.REACT_APP_N8N_BASE_URL;
 
@@ -128,6 +132,19 @@ export default function NetworkDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // Real-time Pi-hole stats: SSE pushes combined + per-server counts every 5s.
+  // Merges into whatever shape the initial REST call produced so downstream
+  // rendering doesn't have to know the difference.
+  useSSE('pihole_stats', (payload) => {
+    const obj = Array.isArray(payload) ? payload[0] : payload;
+    if (!obj) return;
+    setPihole(prev => ({
+      ...(prev || {}),
+      combined: obj.combined || prev?.combined,
+      servers: obj.servers || prev?.servers,
+    }));
+  });
+
   useEffect(() => {
     const load = () => {
       Promise.all([
@@ -180,6 +197,7 @@ export default function NetworkDashboard() {
 
   return (
     <div className="network-page page-enter">
+      <BandwidthTicker />
       {/* Router overview */}
       {router && (
         <>
@@ -367,6 +385,9 @@ export default function NetworkDashboard() {
               ))}
             </div>
           )}
+
+          <PlexNowPlaying />
+          <PiholeLiveTail />
         </>
       )}
     </div>

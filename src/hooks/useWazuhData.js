@@ -3,6 +3,7 @@ import {
   fetchAgents, fetchTrends,
   fetchLiveStats, fetchLiveRules
 } from '../api/wazuh';
+import { useSSE } from './useSSE';
 
 export function useWazuhData(refreshMs = 60000) {
   const [live, setLive] = useState(null);
@@ -38,9 +39,19 @@ export function useWazuhData(refreshMs = 60000) {
 
   useEffect(() => {
     load();
+    // Poll every `refreshMs` as a fallback. SSE handles real-time updates below.
     const interval = setInterval(load, refreshMs);
     return () => clearInterval(interval);
   }, [load, refreshMs]);
+
+  // Real-time: merge SSE pushes into state as they arrive.
+  useSSE('wazuh_live', (data) => {
+    const obj = Array.isArray(data) ? data[0] : data;
+    if (obj) { setLive(obj); setLastRefresh(new Date()); setLoading(false); }
+  });
+  useSSE('wazuh_rules', (data) => {
+    if (Array.isArray(data)) setRules(data);
+  });
 
   return { live, rules, trends, agents, loading, error, refresh: load, lastRefresh };
 }
