@@ -135,7 +135,7 @@ export default function NewsPage() {
     },
     refetchInterval: showSaved ? false : 60_000,
     refetchIntervalInBackground: false,
-    staleTime: 30_000,
+    staleTime: 5_000,
     enabled: !showSaved,
   });
 
@@ -261,6 +261,16 @@ export default function NewsPage() {
               />
             </form>
           )}
+          <button
+            className="btn btn-outline"
+            onClick={() => {
+              qc.invalidateQueries({ queryKey: ['news'] });
+            }}
+            disabled={feed.isFetching || savedView.isFetching}
+            title="Refresh news"
+          >
+            {feed.isFetching || savedView.isFetching ? 'Refreshing…' : 'Refresh'}
+          </button>
           <button
             className={`btn ${chatOpen ? '' : 'btn-outline'}`}
             onClick={() => setChatOpen(!chatOpen)}
