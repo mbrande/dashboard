@@ -1,5 +1,11 @@
 {
+  "updatedAt": "2026-04-17T01:51:00.200Z",
+  "createdAt": "2026-04-17T01:41:54.601Z",
+  "id": "14HCvGS9osVfNAuM",
   "name": "Dashboard Auth Events",
+  "description": null,
+  "active": true,
+  "isArchived": false,
   "nodes": [
     {
       "parameters": {
@@ -12,7 +18,10 @@
       "name": "POST /dashboard-auth/ingest",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [0, 0],
+      "position": [
+        0,
+        0
+      ],
       "webhookId": "dashboard-auth-ingest"
     },
     {
@@ -23,7 +32,10 @@
       "name": "Build Ingest SQL",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [240, 0]
+      "position": [
+        240,
+        0
+      ]
     },
     {
       "parameters": {
@@ -34,7 +46,10 @@
       "name": "Run Ingest",
       "type": "n8n-nodes-base.mySql",
       "typeVersion": 2.4,
-      "position": [480, 0],
+      "position": [
+        480,
+        0
+      ],
       "credentials": {
         "mySql": {
           "id": "9io5uj6IpYHlzMgX",
@@ -51,7 +66,10 @@
       "name": "Format Ingest Response",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [720, 0]
+      "position": [
+        720,
+        0
+      ]
     },
     {
       "parameters": {
@@ -59,8 +77,14 @@
         "options": {
           "responseHeaders": {
             "entries": [
-              { "name": "Access-Control-Allow-Origin", "value": "*" },
-              { "name": "Content-Type", "value": "application/json" }
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
             ]
           }
         }
@@ -69,7 +93,10 @@
       "name": "Respond Ingest",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [960, 0]
+      "position": [
+        960,
+        0
+      ]
     },
     {
       "parameters": {
@@ -82,7 +109,10 @@
       "name": "GET /dashboard-auth/summary",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [0, 300],
+      "position": [
+        0,
+        300
+      ],
       "webhookId": "dashboard-auth-summary"
     },
     {
@@ -94,7 +124,10 @@
       "name": "Fetch Auth Events",
       "type": "n8n-nodes-base.mySql",
       "typeVersion": 2.4,
-      "position": [240, 300],
+      "position": [
+        240,
+        300
+      ],
       "credentials": {
         "mySql": {
           "id": "9io5uj6IpYHlzMgX",
@@ -105,13 +138,16 @@
     },
     {
       "parameters": {
-        "jsCode": "const rows = $input.all().map(i => i.json).filter(r => r && r.occurred_at);\n\nconst byIp = new Map();\nfor (const r of rows) {\n  const k = r.src_ip;\n  let e = byIp.get(k);\n  if (!e) { e = { ip: k, count: 0, real_attempts: 0, probes: 0, user_agents: new Set(), first_seen: r.occurred_at, last_seen: r.occurred_at }; byIp.set(k, e); }\n  e.count++;\n  if (r.had_auth) e.real_attempts++; else e.probes++;\n  if (r.user_agent) e.user_agents.add(r.user_agent);\n  if (r.occurred_at < e.first_seen) e.first_seen = r.occurred_at;\n  if (r.occurred_at > e.last_seen) e.last_seen = r.occurred_at;\n}\nconst by_ip = [...byIp.values()]\n  .map(e => ({ ...e, user_agents: [...e.user_agents].slice(0, 5) }))\n  .sort((a, b) => b.count - a.count)\n  .slice(0, 20);\n\nconst byPath = new Map();\nfor (const r of rows) {\n  const k = r.path || '(none)';\n  byPath.set(k, (byPath.get(k) || 0) + 1);\n}\nconst by_path = [...byPath.entries()]\n  .map(([path, count]) => ({ path, count }))\n  .sort((a, b) => b.count - a.count)\n  .slice(0, 10);\n\nconst recent = rows.slice(0, 50).map(r => ({\n  id: r.id,\n  occurred_at: r.occurred_at,\n  src_ip: r.src_ip,\n  method: r.method,\n  path: r.path,\n  status: r.status,\n  user_agent: r.user_agent,\n  had_auth: !!r.had_auth\n}));\n\nconst total = rows.length;\nconst real_attempts = rows.filter(r => r.had_auth).length;\nconst probes = total - real_attempts;\n\nreturn [{ json: { total, real_attempts, probes, by_ip, by_path, recent, window_days: 7 } }];\n"
+        "jsCode": "const rows = $input.all().map(i => i.json).filter(r => r && r.occurred_at);\n\n// ---- Classification helpers ----\n// RFC1918 + loopback + IPv6 link-local + IPv6 ULA (fc00::/7)\nconst isInternalIp = (ip) => {\n  if (!ip) return false;\n  if (ip === '::1' || ip.startsWith('127.')) return true;\n  if (ip.startsWith('10.') || ip.startsWith('192.168.')) return true;\n  if (/^172\\.(1[6-9]|2\\d|3[01])\\./.test(ip)) return true;\n  const lc = ip.toLowerCase();\n  if (lc.startsWith('fe80:')) return true;\n  if (/^f[cd][0-9a-f]{2}:/.test(lc)) return true;\n  return false;\n};\n\n// Static assets that browsers (notably iOS Safari) fetch without Authorization header.\n// A 401 here reflects browser quirk, not an auth attempt. Match any path whose final\n// segment has a recognized static-asset extension, with optional query string.\nconst staticAssetRe = /\\.(?:js|mjs|cjs|css|map|png|jpe?g|svg|gif|webp|woff2?|ttf|ico|json|webmanifest|txt)(?:\\?.*)?$/i;\n\n// Monitoring agents that probe with credential-less HEAD/GET. Not attacks on their own —\n// but only benign when they hit root or standard health-check paths. A \"curl\" UA hitting\n// /.env or /wp-login.php is an attacker using curl, not a monitor.\n// First-load hits to the app entry paths. iOS Safari and link-preview crawlers\n// produce credential-less 401s here on every fresh session (not attacks).\nconst sessionEntryRe = /^(\\/|\\/dashboard\\/?|\\/dashboard\\/events)$/i;\nconst probeUaRe = /^(Zabbix\\b|ansible-httpget\\b|curl\\b|Wget\\b|Python-urllib\\b|Go-http-client\\b)/i;\nconst monitorPathRe = /^\\/(health|healthz|status|ping|readyz|livez)?$/i;\n\nconst classify = (r) => {\n  if (r.had_auth) return 'real_attempt';\n  const isMonitorPath = r.path && monitorPathRe.test(r.path);\n  const isProbeUa = r.user_agent && probeUaRe.test(r.user_agent);\n  if (isMonitorPath && isProbeUa) return 'monitor_probe';\n  if (r.path && (staticAssetRe.test(r.path) || sessionEntryRe.test(r.path))) return 'asset_probe';\n  return 'endpoint_probe';\n};\n\nfor (const r of rows) {\n  r.classification = classify(r);\n  r.is_internal = isInternalIp(r.src_ip);\n}\n\nconst buildByIp = (subset) => {\n  const byIp = new Map();\n  for (const r of subset) {\n    let e = byIp.get(r.src_ip);\n    if (!e) {\n      e = {\n        ip: r.src_ip, is_internal: r.is_internal,\n        count: 0, real_attempts: 0, probes: 0,\n        asset_probes: 0, monitor_probes: 0, endpoint_probes: 0,\n        user_agents: new Set(),\n        first_seen: r.occurred_at, last_seen: r.occurred_at\n      };\n      byIp.set(r.src_ip, e);\n    }\n    e.count++;\n    if (r.classification === 'real_attempt') e.real_attempts++;\n    else {\n      e.probes++;\n      if (r.classification === 'asset_probe') e.asset_probes++;\n      else if (r.classification === 'monitor_probe') e.monitor_probes++;\n      else e.endpoint_probes++;\n    }\n    if (r.user_agent) e.user_agents.add(r.user_agent);\n    if (r.occurred_at < e.first_seen) e.first_seen = r.occurred_at;\n    if (r.occurred_at > e.last_seen) e.last_seen = r.occurred_at;\n  }\n  return [...byIp.values()]\n    .map(e => ({ ...e, user_agents: [...e.user_agents].slice(0, 5) }))\n    .sort((a, b) => b.count - a.count)\n    .slice(0, 20);\n};\n\nconst buildByPath = (subset) => {\n  const m = new Map();\n  for (const r of subset) {\n    const k = r.path || '(none)';\n    m.set(k, (m.get(k) || 0) + 1);\n  }\n  return [...m.entries()]\n    .map(([path, count]) => ({ path, count }))\n    .sort((a, b) => b.count - a.count)\n    .slice(0, 10);\n};\n\nconst countBy = (subset, cls) => subset.filter(r => r.classification === cls).length;\n\nconst total = rows.length;\nconst real_attempts = countBy(rows, 'real_attempt');\nconst asset_probes = countBy(rows, 'asset_probe');\nconst monitor_probes = countBy(rows, 'monitor_probe');\nconst endpoint_probes = countBy(rows, 'endpoint_probe');\nconst probes = total - real_attempts;\n\nconst external = rows.filter(r => !r.is_internal);\nconst internal = rows.filter(r => r.is_internal);\n\n// What a human (or voice agent) should actually headline: external IPs that were\n// either trying credentials or poking at non-static endpoints.\nconst concerning = external.filter(r =>\n  r.classification === 'real_attempt' || r.classification === 'endpoint_probe'\n);\n\nconst recent = rows.slice(0, 50).map(r => ({\n  id: r.id, occurred_at: r.occurred_at, src_ip: r.src_ip,\n  method: r.method, path: r.path, status: r.status,\n  user_agent: r.user_agent, had_auth: !!r.had_auth,\n  classification: r.classification, is_internal: r.is_internal\n}));\n\nreturn [{ json: {\n  total, real_attempts, probes,\n  by_ip: buildByIp(rows),\n  by_path: buildByPath(rows),\n  recent,\n  window_days: 7,\n  classification: { real_attempts, asset_probes, monitor_probes, endpoint_probes },\n  external: {\n    total: external.length,\n    real_attempts: countBy(external, 'real_attempt'),\n    endpoint_probes: countBy(external, 'endpoint_probe'),\n    asset_probes: countBy(external, 'asset_probe'),\n    monitor_probes: countBy(external, 'monitor_probe'),\n    by_ip: buildByIp(external)\n  },\n  internal: {\n    total: internal.length,\n    real_attempts: countBy(internal, 'real_attempt'),\n    endpoint_probes: countBy(internal, 'endpoint_probe'),\n    asset_probes: countBy(internal, 'asset_probe'),\n    monitor_probes: countBy(internal, 'monitor_probe'),\n    by_ip: buildByIp(internal)\n  },\n  concerning: {\n    total: concerning.length,\n    by_ip: buildByIp(concerning)\n  }\n} }];\n"
       },
       "id": "summary-fmt",
       "name": "Format Summary",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [480, 300]
+      "position": [
+        480,
+        300
+      ]
     },
     {
       "parameters": {
@@ -119,8 +155,14 @@
         "options": {
           "responseHeaders": {
             "entries": [
-              { "name": "Access-Control-Allow-Origin", "value": "*" },
-              { "name": "Content-Type", "value": "application/json" }
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
             ]
           }
         }
@@ -129,19 +171,652 @@
       "name": "Respond Summary",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [720, 300]
+      "position": [
+        720,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "dashboard-auth/bursts",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-bursts",
+      "name": "GET /dashboard-auth/bursts",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        600
+      ],
+      "webhookId": "dashboard-auth-bursts"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT src_ip, user_agent, COUNT(*) AS count, MIN(occurred_at) AS first_seen, MAX(occurred_at) AS last_seen FROM dashboard_auth_events WHERE status IN (401,403) AND occurred_at > NOW() - INTERVAL 10 MINUTE GROUP BY src_ip, user_agent ORDER BY count DESC LIMIT 100"
+      },
+      "id": "bursts-sql",
+      "name": "Fetch Bursts",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        240,
+        600
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "9io5uj6IpYHlzMgX",
+          "name": "MySQL - Home DB"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all().map(i => i.json).filter(r => r && r.src_ip);\n// Merge multiple user_agent rows per IP.\nconst byIp = new Map();\nconst PROBE_RE = /zabbix|ansible|prometheus|uptime[- ]?kuma|statuscake|pingdom/i;\nfor (const r of rows) {\n  let e = byIp.get(r.src_ip);\n  if (!e) { e = { ip: r.src_ip, count: 0, user_agents: new Set(), first_seen: r.first_seen, last_seen: r.last_seen, looks_like_probe: true }; byIp.set(r.src_ip, e); }\n  e.count += Number(r.count) || 0;\n  if (r.user_agent) e.user_agents.add(r.user_agent);\n  if (r.first_seen < e.first_seen) e.first_seen = r.first_seen;\n  if (r.last_seen > e.last_seen) e.last_seen = r.last_seen;\n  if (!(r.user_agent && PROBE_RE.test(r.user_agent))) e.looks_like_probe = false;\n}\nconst by_ip = [...byIp.values()]\n  .map(e => ({ ...e, user_agents: [...e.user_agents].slice(0, 3) }))\n  .sort((a, b) => b.count - a.count);\n\nreturn [{ json: { window_minutes: 10, by_ip } }];\n"
+      },
+      "id": "bursts-fmt",
+      "name": "Format Bursts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "bursts-resp",
+      "name": "Respond Bursts",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        720,
+        600
+      ]
     }
   ],
   "connections": {
-    "POST /dashboard-auth/ingest": { "main": [[{ "node": "Build Ingest SQL", "type": "main", "index": 0 }]] },
-    "Build Ingest SQL": { "main": [[{ "node": "Run Ingest", "type": "main", "index": 0 }]] },
-    "Run Ingest": { "main": [[{ "node": "Format Ingest Response", "type": "main", "index": 0 }]] },
-    "Format Ingest Response": { "main": [[{ "node": "Respond Ingest", "type": "main", "index": 0 }]] },
-    "GET /dashboard-auth/summary": { "main": [[{ "node": "Fetch Auth Events", "type": "main", "index": 0 }]] },
-    "Fetch Auth Events": { "main": [[{ "node": "Format Summary", "type": "main", "index": 0 }]] },
-    "Format Summary": { "main": [[{ "node": "Respond Summary", "type": "main", "index": 0 }]] }
+    "POST /dashboard-auth/ingest": {
+      "main": [
+        [
+          {
+            "node": "Build Ingest SQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Ingest SQL": {
+      "main": [
+        [
+          {
+            "node": "Run Ingest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Ingest": {
+      "main": [
+        [
+          {
+            "node": "Format Ingest Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Ingest Response": {
+      "main": [
+        [
+          {
+            "node": "Respond Ingest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET /dashboard-auth/summary": {
+      "main": [
+        [
+          {
+            "node": "Fetch Auth Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Auth Events": {
+      "main": [
+        [
+          {
+            "node": "Format Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Summary": {
+      "main": [
+        [
+          {
+            "node": "Respond Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET /dashboard-auth/bursts": {
+      "main": [
+        [
+          {
+            "node": "Fetch Bursts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Bursts": {
+      "main": [
+        [
+          {
+            "node": "Format Bursts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Bursts": {
+      "main": [
+        [
+          {
+            "node": "Respond Bursts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
   },
   "settings": {
-    "executionOrder": "v1"
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": null,
+  "versionId": "5eeed859-0568-4f0d-a9f6-771d732f69ca",
+  "activeVersionId": "5eeed859-0568-4f0d-a9f6-771d732f69ca",
+  "versionCounter": 6,
+  "triggerCount": 3,
+  "shared": [
+    {
+      "updatedAt": "2026-04-17T01:41:54.603Z",
+      "createdAt": "2026-04-17T01:41:54.603Z",
+      "role": "workflow:owner",
+      "workflowId": "14HCvGS9osVfNAuM",
+      "projectId": "DdAO3gk6p3HIXcUp",
+      "project": {
+        "updatedAt": "2025-12-03T20:06:20.899Z",
+        "createdAt": "2025-12-03T18:27:26.125Z",
+        "id": "DdAO3gk6p3HIXcUp",
+        "name": "Mike Brande <mikebrande@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "fd610415-6792-44ec-9a14-22d879a99dad",
+        "projectRelations": [
+          {
+            "updatedAt": "2025-12-03T18:27:26.126Z",
+            "createdAt": "2025-12-03T18:27:26.126Z",
+            "userId": "fd610415-6792-44ec-9a14-22d879a99dad",
+            "projectId": "DdAO3gk6p3HIXcUp",
+            "user": {
+              "updatedAt": "2026-04-22T04:53:53.000Z",
+              "createdAt": "2025-12-03T18:27:25.115Z",
+              "id": "fd610415-6792-44ec-9a14-22d879a99dad",
+              "email": "mikebrande@gmail.com",
+              "firstName": "Mike",
+              "lastName": "Brande",
+              "personalizationAnswers": {
+                "version": "v4",
+                "personalization_survey_submitted_at": "2025-12-03T20:06:38.757Z",
+                "personalization_survey_n8n_version": "1.122.4",
+                "companyIndustryExtended": [
+                  "it-industry"
+                ],
+                "companyType": "other"
+              },
+              "settings": {
+                "userActivated": true,
+                "easyAIWorkflowOnboarded": true,
+                "firstSuccessfulWorkflowId": "Px9d3dX5xjL5irCWWXeZK",
+                "userActivatedAt": 1774751400388,
+                "npsSurvey": {
+                  "responded": true,
+                  "lastShownAt": 1775067161042
+                }
+              },
+              "disabled": false,
+              "mfaEnabled": false,
+              "lastActiveAt": "2026-04-21",
+              "isPending": false
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "tags": [],
+  "activeVersion": {
+    "updatedAt": "2026-04-17T01:51:00.201Z",
+    "createdAt": "2026-04-17T01:51:00.201Z",
+    "versionId": "5eeed859-0568-4f0d-a9f6-771d732f69ca",
+    "workflowId": "14HCvGS9osVfNAuM",
+    "nodes": [
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "dashboard-auth/ingest",
+          "responseMode": "responseNode",
+          "options": {}
+        },
+        "id": "wh-ingest",
+        "name": "POST /dashboard-auth/ingest",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2,
+        "position": [
+          0,
+          0
+        ],
+        "webhookId": "dashboard-auth-ingest"
+      },
+      {
+        "parameters": {
+          "jsCode": "const body = $input.first().json.body || {};\nconst events = Array.isArray(body.events) ? body.events : [];\n\nconst ddl = \"CREATE TABLE IF NOT EXISTS dashboard_auth_events (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, occurred_at DATETIME NOT NULL, src_ip VARCHAR(45) NOT NULL, method VARCHAR(10), path VARCHAR(512), status SMALLINT NOT NULL, user_agent VARCHAR(512), had_auth TINYINT NOT NULL DEFAULT 0, bytes_sent INT, line_hash CHAR(64) NOT NULL UNIQUE, INDEX idx_occurred (occurred_at), INDEX idx_src_ip (src_ip), INDEX idx_status (status)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4\";\n\nif (events.length === 0) {\n  return [{ json: { sql: ddl + '; SELECT 0 AS inserted', eventCount: 0 } }];\n}\n\nconst esc = (v) => {\n  if (v === null || v === undefined) return 'NULL';\n  return \"'\" + String(v).replace(/\\\\/g, '\\\\\\\\').replace(/'/g, \"''\") + \"'\";\n};\n\nconst values = events.map(e => {\n  return `(${esc(e.occurred_at)}, ${esc(e.src_ip)}, ${esc(e.method)}, ${esc(e.path)}, ${Number(e.status) || 0}, ${esc(e.user_agent)}, ${e.had_auth ? 1 : 0}, ${Number.isFinite(e.bytes_sent) ? e.bytes_sent : 'NULL'}, ${esc(e.line_hash)})`;\n}).join(',\\n');\n\nconst insert = `INSERT IGNORE INTO dashboard_auth_events (occurred_at, src_ip, method, path, status, user_agent, had_auth, bytes_sent, line_hash) VALUES ${values}`;\n\nreturn [{ json: { sql: ddl + ';\\n' + insert, eventCount: events.length } }];\n"
+        },
+        "id": "ingest-build",
+        "name": "Build Ingest SQL",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          240,
+          0
+        ]
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "={{ $json.sql }}"
+        },
+        "id": "ingest-exec",
+        "name": "Run Ingest",
+        "type": "n8n-nodes-base.mySql",
+        "typeVersion": 2.4,
+        "position": [
+          480,
+          0
+        ],
+        "credentials": {
+          "mySql": {
+            "id": "9io5uj6IpYHlzMgX",
+            "name": "MySQL - Home DB"
+          }
+        },
+        "alwaysOutputData": true
+      },
+      {
+        "parameters": {
+          "jsCode": "const ec = $('Build Ingest SQL').first().json.eventCount || 0;\nreturn [{ json: { ok: true, received: ec } }];\n"
+        },
+        "id": "ingest-fmt",
+        "name": "Format Ingest Response",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          720,
+          0
+        ]
+      },
+      {
+        "parameters": {
+          "respondWith": "allIncomingItems",
+          "options": {
+            "responseHeaders": {
+              "entries": [
+                {
+                  "name": "Access-Control-Allow-Origin",
+                  "value": "*"
+                },
+                {
+                  "name": "Content-Type",
+                  "value": "application/json"
+                }
+              ]
+            }
+          }
+        },
+        "id": "ingest-resp",
+        "name": "Respond Ingest",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.1,
+        "position": [
+          960,
+          0
+        ]
+      },
+      {
+        "parameters": {
+          "httpMethod": "GET",
+          "path": "dashboard-auth/summary",
+          "responseMode": "responseNode",
+          "options": {}
+        },
+        "id": "wh-summary",
+        "name": "GET /dashboard-auth/summary",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2,
+        "position": [
+          0,
+          300
+        ],
+        "webhookId": "dashboard-auth-summary"
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "SELECT id, occurred_at, src_ip, method, path, status, user_agent, had_auth FROM dashboard_auth_events WHERE status IN (401, 403) AND occurred_at > NOW() - INTERVAL 7 DAY ORDER BY occurred_at DESC LIMIT 500"
+        },
+        "id": "summary-sql",
+        "name": "Fetch Auth Events",
+        "type": "n8n-nodes-base.mySql",
+        "typeVersion": 2.4,
+        "position": [
+          240,
+          300
+        ],
+        "credentials": {
+          "mySql": {
+            "id": "9io5uj6IpYHlzMgX",
+            "name": "MySQL - Home DB"
+          }
+        },
+        "alwaysOutputData": true
+      },
+      {
+        "parameters": {
+          "jsCode": "const rows = $input.all().map(i => i.json).filter(r => r && r.occurred_at);\n\nconst byIp = new Map();\nfor (const r of rows) {\n  const k = r.src_ip;\n  let e = byIp.get(k);\n  if (!e) { e = { ip: k, count: 0, real_attempts: 0, probes: 0, user_agents: new Set(), first_seen: r.occurred_at, last_seen: r.occurred_at }; byIp.set(k, e); }\n  e.count++;\n  if (r.had_auth) e.real_attempts++; else e.probes++;\n  if (r.user_agent) e.user_agents.add(r.user_agent);\n  if (r.occurred_at < e.first_seen) e.first_seen = r.occurred_at;\n  if (r.occurred_at > e.last_seen) e.last_seen = r.occurred_at;\n}\nconst by_ip = [...byIp.values()]\n  .map(e => ({ ...e, user_agents: [...e.user_agents].slice(0, 5) }))\n  .sort((a, b) => b.count - a.count)\n  .slice(0, 20);\n\nconst byPath = new Map();\nfor (const r of rows) {\n  const k = r.path || '(none)';\n  byPath.set(k, (byPath.get(k) || 0) + 1);\n}\nconst by_path = [...byPath.entries()]\n  .map(([path, count]) => ({ path, count }))\n  .sort((a, b) => b.count - a.count)\n  .slice(0, 10);\n\nconst recent = rows.slice(0, 50).map(r => ({\n  id: r.id,\n  occurred_at: r.occurred_at,\n  src_ip: r.src_ip,\n  method: r.method,\n  path: r.path,\n  status: r.status,\n  user_agent: r.user_agent,\n  had_auth: !!r.had_auth\n}));\n\nconst total = rows.length;\nconst real_attempts = rows.filter(r => r.had_auth).length;\nconst probes = total - real_attempts;\n\nreturn [{ json: { total, real_attempts, probes, by_ip, by_path, recent, window_days: 7 } }];\n"
+        },
+        "id": "summary-fmt",
+        "name": "Format Summary",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          480,
+          300
+        ]
+      },
+      {
+        "parameters": {
+          "respondWith": "allIncomingItems",
+          "options": {
+            "responseHeaders": {
+              "entries": [
+                {
+                  "name": "Access-Control-Allow-Origin",
+                  "value": "*"
+                },
+                {
+                  "name": "Content-Type",
+                  "value": "application/json"
+                }
+              ]
+            }
+          }
+        },
+        "id": "summary-resp",
+        "name": "Respond Summary",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.1,
+        "position": [
+          720,
+          300
+        ]
+      },
+      {
+        "parameters": {
+          "httpMethod": "GET",
+          "path": "dashboard-auth/bursts",
+          "responseMode": "responseNode",
+          "options": {}
+        },
+        "id": "wh-bursts",
+        "name": "GET /dashboard-auth/bursts",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2,
+        "position": [
+          0,
+          600
+        ],
+        "webhookId": "dashboard-auth-bursts"
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "SELECT src_ip, user_agent, COUNT(*) AS count, MIN(occurred_at) AS first_seen, MAX(occurred_at) AS last_seen FROM dashboard_auth_events WHERE status IN (401,403) AND occurred_at > NOW() - INTERVAL 10 MINUTE GROUP BY src_ip, user_agent ORDER BY count DESC LIMIT 100"
+        },
+        "id": "bursts-sql",
+        "name": "Fetch Bursts",
+        "type": "n8n-nodes-base.mySql",
+        "typeVersion": 2.4,
+        "position": [
+          240,
+          600
+        ],
+        "credentials": {
+          "mySql": {
+            "id": "9io5uj6IpYHlzMgX",
+            "name": "MySQL - Home DB"
+          }
+        },
+        "alwaysOutputData": true
+      },
+      {
+        "parameters": {
+          "jsCode": "const rows = $input.all().map(i => i.json).filter(r => r && r.src_ip);\n// Merge multiple user_agent rows per IP.\nconst byIp = new Map();\nconst PROBE_RE = /zabbix|ansible|prometheus|uptime[- ]?kuma|statuscake|pingdom/i;\nfor (const r of rows) {\n  let e = byIp.get(r.src_ip);\n  if (!e) { e = { ip: r.src_ip, count: 0, user_agents: new Set(), first_seen: r.first_seen, last_seen: r.last_seen, looks_like_probe: true }; byIp.set(r.src_ip, e); }\n  e.count += Number(r.count) || 0;\n  if (r.user_agent) e.user_agents.add(r.user_agent);\n  if (r.first_seen < e.first_seen) e.first_seen = r.first_seen;\n  if (r.last_seen > e.last_seen) e.last_seen = r.last_seen;\n  if (!(r.user_agent && PROBE_RE.test(r.user_agent))) e.looks_like_probe = false;\n}\nconst by_ip = [...byIp.values()]\n  .map(e => ({ ...e, user_agents: [...e.user_agents].slice(0, 3) }))\n  .sort((a, b) => b.count - a.count);\n\nreturn [{ json: { window_minutes: 10, by_ip } }];\n"
+        },
+        "id": "bursts-fmt",
+        "name": "Format Bursts",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          480,
+          600
+        ]
+      },
+      {
+        "parameters": {
+          "respondWith": "allIncomingItems",
+          "options": {
+            "responseHeaders": {
+              "entries": [
+                {
+                  "name": "Access-Control-Allow-Origin",
+                  "value": "*"
+                },
+                {
+                  "name": "Content-Type",
+                  "value": "application/json"
+                }
+              ]
+            }
+          }
+        },
+        "id": "bursts-resp",
+        "name": "Respond Bursts",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.1,
+        "position": [
+          720,
+          600
+        ]
+      }
+    ],
+    "connections": {
+      "POST /dashboard-auth/ingest": {
+        "main": [
+          [
+            {
+              "node": "Build Ingest SQL",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Build Ingest SQL": {
+        "main": [
+          [
+            {
+              "node": "Run Ingest",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Run Ingest": {
+        "main": [
+          [
+            {
+              "node": "Format Ingest Response",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Format Ingest Response": {
+        "main": [
+          [
+            {
+              "node": "Respond Ingest",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "GET /dashboard-auth/summary": {
+        "main": [
+          [
+            {
+              "node": "Fetch Auth Events",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Fetch Auth Events": {
+        "main": [
+          [
+            {
+              "node": "Format Summary",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Format Summary": {
+        "main": [
+          [
+            {
+              "node": "Respond Summary",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "GET /dashboard-auth/bursts": {
+        "main": [
+          [
+            {
+              "node": "Fetch Bursts",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Fetch Bursts": {
+        "main": [
+          [
+            {
+              "node": "Format Bursts",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Format Bursts": {
+        "main": [
+          [
+            {
+              "node": "Respond Bursts",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "authors": "Mike Brande",
+    "name": null,
+    "description": null,
+    "autosaved": false,
+    "workflowPublishHistory": [
+      {
+        "createdAt": "2026-04-17T01:51:00.265Z",
+        "id": 206,
+        "workflowId": "14HCvGS9osVfNAuM",
+        "versionId": "5eeed859-0568-4f0d-a9f6-771d732f69ca",
+        "event": "activated",
+        "userId": "fd610415-6792-44ec-9a14-22d879a99dad"
+      }
+    ]
   }
 }

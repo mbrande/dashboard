@@ -433,7 +433,7 @@ body {
 /* ------------------------------------------------------------
    Pi-hole live tail panel
    ------------------------------------------------------------ */
-.pihole-tail-card { padding: 0; overflow: hidden; }
+.pihole-tail-card { padding: 0; overflow: hidden; margin-bottom: 20px; }
 
 .pihole-tail-header {
   display: flex; justify-content: space-between; align-items: center;
@@ -532,6 +532,7 @@ body {
 /* ------------------------------------------------------------
    Zabbix problem stream
    ------------------------------------------------------------ */
+.zp-card { margin-bottom: 20px; }
 .zp-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }
 .zp-header h2 { font-size: 0.95rem; margin: 0; }
 .zp-list { max-height: 280px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; font-size: 0.78rem; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
@@ -1416,4 +1417,80 @@ body.panel-open { overflow: hidden; }
 @media (max-width: 900px) {
   .news-layout { flex-direction: column; }
   .news-chat-panel { width: 100%; height: 400px; position: static; }
+}
+
+/* ---- DNS Rain (3D) ---- */
+.dns3d-root {
+  position: fixed;
+  inset: 0;
+  background: #05070b;
+  overflow: hidden;
+}
+.dns3d-root canvas { display: block; }
+
+.dns3d-hud-tl,
+.dns3d-hud-tr,
+.dns3d-hud-bl {
+  position: absolute;
+  color: #e8eaed;
+  font-family: inherit;
+  pointer-events: none;
+  z-index: 10;
+}
+.dns3d-hud-tl { top: 16px; left: 20px; }
+.dns3d-hud-tr {
+  top: 16px; right: 20px;
+  display: flex; gap: 18px;
+  background: rgba(8, 12, 20, 0.55);
+  backdrop-filter: blur(8px);
+  padding: 10px 16px; border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+.dns3d-hud-bl {
+  bottom: 14px; left: 20px;
+  font-size: 0.72rem;
+  color: rgba(232, 234, 237, 0.45);
+  letter-spacing: 0.02em;
+}
+
+.dns3d-hud-tl h2 {
+  margin: 6px 0 2px;
+  font-size: 1.1rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+.dns3d-sub {
+  font-size: 0.78rem;
+  color: rgba(232, 234, 237, 0.6);
+}
+
+.dns3d-back {
+  pointer-events: auto;
+  display: inline-flex; align-items: center; gap: 6px;
+  background: rgba(8, 12, 20, 0.55);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #e8eaed;
+  padding: 6px 12px; border-radius: 8px;
+  font-size: 0.78rem; cursor: pointer; font-family: inherit;
+  transition: background 0.15s, border-color 0.15s;
+}
+.dns3d-back:hover {
+  background: rgba(26, 115, 232, 0.18);
+  border-color: rgba(26, 115, 232, 0.5);
+}
+
+.dns3d-stat {
+  display: flex; flex-direction: column; align-items: center; min-width: 52px;
+}
+.dns3d-stat-val {
+  font-size: 1.35rem; font-weight: 500; line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.dns3d-stat-lbl {
+  font-size: 0.65rem;
+  color: rgba(232, 234, 237, 0.55);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-top: 4px;
 }

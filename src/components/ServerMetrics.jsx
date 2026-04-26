@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
+import { useQueries } from '@tanstack/react-query';
 import ZabbixProblemStream from './ZabbixProblemStream';
 
 const BASE = process.env.REACT_APP_N8N_BASE_URL;
+const unwrap = (d) => (Array.isArray(d) ? d[0] : d);
 
 function formatUptime(seconds) {
   if (!seconds) return '—';
@@ -37,33 +39,18 @@ function SevBadge({ severity }) {
 }
 
 export default function ServerMetrics() {
-  const [servers, setServers] = useState([]);
-  const [problems, setProblems] = useState([]);
-  const [network, setNetwork] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [serversQ, problemsQ, networkQ] = useQueries({
+    queries: [
+      { queryKey: ['zabbix', 'servers'], queryFn: () => fetch(`${BASE}/zabbix/servers`).then(r => r.json()), refetchInterval: 60000, select: (d) => unwrap(d)?.servers || [] },
+      { queryKey: ['zabbix', 'problems'], queryFn: () => fetch(`${BASE}/zabbix/problems`).then(r => r.json()), refetchInterval: 60000, select: (d) => unwrap(d)?.problems || [] },
+      { queryKey: ['zabbix', 'network'], queryFn: () => fetch(`${BASE}/zabbix/network`).then(r => r.json()), refetchInterval: 60000, select: unwrap },
+    ],
+  });
+  const servers = serversQ.data || [];
+  const problems = problemsQ.data || [];
+  const network = networkQ.data;
 
-  useEffect(() => {
-    const load = () => {
-      Promise.all([
-        fetch(`${BASE}/zabbix/servers`).then(r => r.json()),
-        fetch(`${BASE}/zabbix/problems`).then(r => r.json()),
-        fetch(`${BASE}/zabbix/network`).then(r => r.json())
-      ]).then(([s, p, n]) => {
-        const sd = Array.isArray(s) ? s[0] : s;
-        const pd = Array.isArray(p) ? p[0] : p;
-        const nd = Array.isArray(n) ? n[0] : n;
-        setServers(sd?.servers || []);
-        setProblems(pd?.problems || []);
-        setNetwork(nd);
-        setLoading(false);
-      }).catch(() => setLoading(false));
-    };
-    load();
-    const interval = setInterval(load, 60000);
-    return () => clearInterval(interval);
-  }, []);
-
-  if (loading) {
+  if (serversQ.isPending || problemsQ.isPending || networkQ.isPending) {
     return <div className="page-loading"><div className="spinner" /><span>Loading server metrics...</span></div>;
   }
 

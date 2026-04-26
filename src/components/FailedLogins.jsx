@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 const BASE = process.env.REACT_APP_N8N_BASE_URL;
+const unwrap = (d) => (Array.isArray(d) ? d[0] : d);
 
 const tooltipStyle = {
   backgroundColor: '#fff', border: '1px solid #e0e0e0',
@@ -36,19 +38,12 @@ function SeenRange({ first, last }) {
 }
 
 export default function FailedLogins() {
-  const [data, setData] = useState(null);
-
-  useEffect(() => {
-    const load = () => {
-      fetch(`${BASE}/wazuh/failed-logins`)
-        .then(r => r.json())
-        .then(d => setData(Array.isArray(d) ? d[0] : d))
-        .catch(() => {});
-    };
-    load();
-    const interval = setInterval(load, 60000);
-    return () => clearInterval(interval);
-  }, []);
+  const { data } = useQuery({
+    queryKey: ['wazuh', 'failed-logins'],
+    queryFn: () => fetch(`${BASE}/wazuh/failed-logins`).then(r => r.json()),
+    refetchInterval: 60000,
+    select: unwrap,
+  });
 
   if (!data || data.total === 0) return null;
 

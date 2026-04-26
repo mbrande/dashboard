@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
+import { useQuery, useQueries, useQueryClient } from '@tanstack/react-query';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import PiholeLiveTail from './PiholeLiveTail';
 import BandwidthTicker from './BandwidthTicker';
@@ -6,6 +7,14 @@ import PlexNowPlaying from './PlexNowPlaying';
 import { useSSE } from '../hooks/useSSE';
 
 const BASE = process.env.REACT_APP_N8N_BASE_URL;
+const piholeKey = ['pihole', 'stats'];
+const unwrap = (d) => (Array.isArray(d) ? d[0] : d);
+const unwrapField = (field) => (d) => {
+  const obj = unwrap(d);
+  if (obj && Array.isArray(obj[field])) return obj[field];
+  if (Array.isArray(d)) return d;
+  return [];
+};
 
 function formatBits(bps) {
   if (!bps && bps !== 0) return '—';
@@ -42,25 +51,17 @@ function TrafficChart({ data, title }) {
 
 function DeviceTrafficPanel({ devices }) {
   const [selected, setSelected] = useState(null);
-  const [history, setHistory] = useState([]);
-  const [histLoading, setHistLoading] = useState(false);
+
+  const { data: history = [], isFetching: histLoading } = useQuery({
+    queryKey: ['zabbix', 'device-history', selected],
+    queryFn: () => fetch(`${BASE}/zabbix/device-history?hostid=${selected}`).then(r => r.json()),
+    enabled: selected != null,
+    select: (d) => unwrap(d)?.history || [],
+    staleTime: 30_000,
+  });
 
   const handleClick = (device) => {
-    if (selected === device.hostid) {
-      setSelected(null);
-      setHistory([]);
-      return;
-    }
-    setSelected(device.hostid);
-    setHistLoading(true);
-    fetch(`${BASE}/zabbix/device-history?hostid=${device.hostid}`)
-      .then(r => r.json())
-      .then(d => {
-        const result = Array.isArray(d) ? d[0] : d;
-        setHistory(result?.history || []);
-        setHistLoading(false);
-      })
-      .catch(() => setHistLoading(false));
+    setSelected(prev => (prev === device.hostid ? null : device.hostid));
   };
 
   return (
@@ -123,61 +124,40 @@ function DeviceTrafficPanel({ devices }) {
 }
 
 export default function NetworkDashboard() {
-  const [router, setRouter] = useState(null);
-  const [interfaces, setInterfaces] = useState([]);
-  const [traffic, setTraffic] = useState([]);
-  const [devices, setDevices] = useState([]);
-  const [routerStats, setRouterStats] = useState([]);
-  const [pihole, setPihole] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const qc = useQueryClient();
+
+  const queries = useQueries({
+    queries: [
+      { queryKey: ['zabbix', 'router'], queryFn: () => fetch(`${BASE}/zabbix/router`).then(r => r.json()), refetchInterval: 60000, select: unwrap },
+      { queryKey: ['zabbix', 'router-interfaces'], queryFn: () => fetch(`${BASE}/zabbix/router-interfaces`).then(r => r.json()), refetchInterval: 60000, select: unwrapField('interfaces') },
+      { queryKey: ['zabbix', 'router-traffic'], queryFn: () => fetch(`${BASE}/zabbix/router-traffic`).then(r => r.json()), refetchInterval: 60000, select: unwrapField('history') },
+      { queryKey: ['zabbix', 'device-traffic'], queryFn: () => fetch(`${BASE}/zabbix/device-traffic`).then(r => r.json()), refetchInterval: 60000, select: unwrapField('devices') },
+      { queryKey: ['zabbix', 'router-stats'], queryFn: () => fetch(`${BASE}/zabbix/router-stats`).then(r => r.json()), refetchInterval: 60000, select: unwrapField('history') },
+      { queryKey: piholeKey, queryFn: () => fetch(`${BASE}/pihole/stats`).then(r => r.json()), refetchInterval: 60000, select: unwrap },
+    ],
+  });
+  const [routerQ, ifacesQ, trafficQ, devicesQ, statsQ, piholeQ] = queries;
+  const router = routerQ.data;
+  const interfaces = ifacesQ.data || [];
+  const traffic = trafficQ.data || [];
+  const devices = devicesQ.data || [];
+  const routerStats = statsQ.data || [];
+  const pihole = piholeQ.data;
 
   // Real-time Pi-hole stats: SSE pushes combined + per-server counts every 5s.
-  // Merges into whatever shape the initial REST call produced so downstream
-  // rendering doesn't have to know the difference.
+  // Merge into the cached REST shape so downstream rendering is uniform.
   useSSE('pihole_stats', (payload) => {
-    const obj = Array.isArray(payload) ? payload[0] : payload;
+    const obj = unwrap(payload);
     if (!obj) return;
-    setPihole(prev => ({
-      ...(prev || {}),
-      combined: obj.combined || prev?.combined,
-      servers: obj.servers || prev?.servers,
-    }));
+    qc.setQueryData(piholeKey, (old) => {
+      const prev = unwrap(old) || {};
+      const merged = { ...prev, combined: obj.combined || prev.combined, servers: obj.servers || prev.servers };
+      return Array.isArray(old) ? [merged] : merged;
+    });
   });
 
-  useEffect(() => {
-    const load = () => {
-      Promise.all([
-        fetch(`${BASE}/zabbix/router`).then(r => r.json()),
-        fetch(`${BASE}/zabbix/router-interfaces`).then(r => r.json()),
-        fetch(`${BASE}/zabbix/router-traffic`).then(r => r.json()),
-        fetch(`${BASE}/zabbix/device-traffic`).then(r => r.json()),
-        fetch(`${BASE}/zabbix/router-stats`).then(r => r.json()),
-        fetch(`${BASE}/pihole/stats`).then(r => r.json())
-      ]).then(([r, ifaces, t, dt, rs, ph]) => {
-        const rd = Array.isArray(r) ? r[0] : r;
-        const id = Array.isArray(ifaces) ? (ifaces[0]?.interfaces || ifaces) : (ifaces?.interfaces || []);
-        const td = Array.isArray(t) ? (t[0]?.history || t) : (t?.history || []);
-        const dd = Array.isArray(dt) ? (dt[0]?.devices || dt) : (dt?.devices || []);
-        const rsh = Array.isArray(rs) ? (rs[0]?.history || rs) : (rs?.history || []);
-        const phd = Array.isArray(ph) ? ph[0] : ph;
-        setRouter(rd);
-        setInterfaces(Array.isArray(id) ? id : []);
-        setTraffic(Array.isArray(td) ? td : []);
-        setDevices(Array.isArray(dd) ? dd : []);
-        setRouterStats(Array.isArray(rsh) ? rsh : []);
-        setPihole(phd);
-        setError(null);
-        setLoading(false);
-      }).catch(err => {
-        setError(err.message);
-        setLoading(false);
-      });
-    };
-    load();
-    const interval = setInterval(load, 60000);
-    return () => clearInterval(interval);
-  }, []);
+  const loading = queries.some(q => q.isPending);
+  const error = queries.find(q => q.error)?.error?.message || null;
 
   if (loading) {
     return <div className="page-loading"><div className="spinner" /><span>Loading network data...</span></div>;
@@ -386,8 +366,8 @@ export default function NetworkDashboard() {
             </div>
           )}
 
-          <PlexNowPlaying />
           <PiholeLiveTail />
+          <PlexNowPlaying />
         </>
       )}
     </div>

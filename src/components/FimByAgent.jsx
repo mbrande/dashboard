@@ -1,9 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
 } from 'recharts';
 
 const BASE = process.env.REACT_APP_N8N_BASE_URL;
+const unwrap = (d) => (Array.isArray(d) ? d[0] : d);
 
 const COLORS = [
   '#1a73e8', '#ea4335', '#f9ab00', '#34a853', '#8430ce',
@@ -11,26 +13,14 @@ const COLORS = [
 ];
 
 export default function FimByAgent() {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const { data, isPending } = useQuery({
+    queryKey: ['wazuh', 'fim-by-agent'],
+    queryFn: () => fetch(`${BASE}/wazuh/fim-by-agent`).then(r => r.json()),
+    refetchInterval: 60000,
+    select: unwrap,
+  });
 
-  useEffect(() => {
-    const load = () => {
-      fetch(`${BASE}/wazuh/fim-by-agent`)
-        .then(r => r.json())
-        .then(d => {
-          const result = Array.isArray(d) ? d[0] : d;
-          setData(result);
-          setLoading(false);
-        })
-        .catch(() => setLoading(false));
-    };
-    load();
-    const interval = setInterval(load, 60000);
-    return () => clearInterval(interval);
-  }, []);
-
-  if (loading || !data) return null;
+  if (isPending || !data) return null;
 
   const { agents, timeline, total } = data;
   if (!agents || agents.length === 0) return null;

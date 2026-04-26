@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchPendingAlerts, acknowledgeAlerts } from '../api/alerts';
 
 const SEEN_KEY = 'dashboard_seen_alerts';
+export const alertsKey = ['alerts', 'pending'];
 
 function getSeen() {
   try {
@@ -20,78 +22,72 @@ function setSeen(seen) {
   localStorage.setItem(SEEN_KEY, JSON.stringify(seen));
 }
 
+function fireNotification(alert) {
+  if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+  try {
+    const n = new Notification(alert.title, {
+      body: alert.body || '',
+      icon: '/dashboard/logo192.png',
+      tag: alert.id,
+      requireInteraction: alert.severity === 'critical'
+    });
+    n.onclick = () => { window.focus(); n.close(); };
+  } catch {}
+}
+
+function selectAlerts(data) {
+  const result = Array.isArray(data) ? data[0] : data;
+  return result?.alerts || [];
+}
+
 export function useAlerts() {
-  const [alerts, setAlerts] = useState([]);
-  const [unread, setUnread] = useState(0);
+  const qc = useQueryClient();
   const [permission, setPermission] = useState(
     typeof Notification !== 'undefined' ? Notification.permission : 'denied'
   );
   const seenRef = useRef(getSeen());
-  const intervalRef = useRef(null);
 
-  const fireNotification = useCallback((alert) => {
-    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
-    try {
-      const n = new Notification(alert.title, {
-        body: alert.body || '',
-        icon: '/dashboard/logo192.png',
-        tag: alert.id,
-        requireInteraction: alert.severity === 'critical'
-      });
-      n.onclick = () => {
-        window.focus();
-        n.close();
-      };
-    } catch {}
-  }, []);
+  const { data: alerts = [] } = useQuery({
+    queryKey: alertsKey,
+    queryFn: fetchPendingAlerts,
+    select: selectAlerts,
+    refetchInterval: () => (document.hidden ? 300000 : 90000),
+    refetchIntervalInBackground: true,
+  });
 
-  const load = useCallback(async () => {
-    try {
-      const data = await fetchPendingAlerts();
-      const result = Array.isArray(data) ? data[0] : data;
-      const pending = result?.alerts || [];
-      setAlerts(pending);
-      setUnread(pending.length);
-
-      // Fire notifications for unseen alerts
-      const seen = seenRef.current;
-      for (const alert of pending) {
-        if (!seen[alert.id]) {
-          fireNotification(alert);
-          seen[alert.id] = Date.now();
-        }
-      }
-      seenRef.current = seen;
-      setSeen(seen);
-    } catch {}
-  }, [fireNotification]);
-
+  // Fire a browser Notification for each unseen alert id.
   useEffect(() => {
-    load();
-
-    // Poll every 90s when visible, pause when hidden
-    const start = (ms) => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      intervalRef.current = setInterval(load, ms);
-    };
-
-    start(90000);
-
-    const onVisibility = () => {
-      if (document.hidden) {
-        start(300000);
-      } else {
-        load();
-        start(90000);
+    const seen = seenRef.current;
+    let changed = false;
+    for (const alert of alerts) {
+      if (!seen[alert.id]) {
+        fireNotification(alert);
+        seen[alert.id] = Date.now();
+        changed = true;
       }
-    };
-    document.addEventListener('visibilitychange', onVisibility);
+    }
+    if (changed) setSeen(seen);
+  }, [alerts]);
 
-    return () => {
-      clearInterval(intervalRef.current);
-      document.removeEventListener('visibilitychange', onVisibility);
-    };
-  }, [load]);
+  const ackMutation = useMutation({
+    mutationFn: acknowledgeAlerts,
+    onMutate: async (ids) => {
+      // Optimistic: drop acked rows from the cache so the UI updates instantly.
+      await qc.cancelQueries({ queryKey: alertsKey });
+      const prev = qc.getQueryData(alertsKey);
+      qc.setQueryData(alertsKey, (old) => {
+        const result = Array.isArray(old) ? old[0] : old;
+        if (!result?.alerts) return old;
+        const next = { ...result, alerts: result.alerts.filter(a => !ids.includes(a.id)) };
+        return Array.isArray(old) ? [next] : next;
+      });
+      return { prev };
+    },
+    onError: (_err, _ids, ctx) => {
+      if (ctx?.prev !== undefined) qc.setQueryData(alertsKey, ctx.prev);
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: alertsKey }),
+  });
 
   const requestPermission = useCallback(async () => {
     if (typeof Notification === 'undefined') return;
@@ -99,18 +95,18 @@ export function useAlerts() {
     setPermission(result);
   }, []);
 
-  const markRead = useCallback(async (ids) => {
-    try {
-      await acknowledgeAlerts(ids);
-      setAlerts(prev => prev.filter(a => !ids.includes(a.id)));
-      setUnread(prev => Math.max(0, prev - ids.length));
-    } catch {}
-  }, []);
-
-  const clearAll = useCallback(async () => {
+  const markRead = useCallback((ids) => ackMutation.mutate(ids), [ackMutation]);
+  const clearAll = useCallback(() => {
     const ids = alerts.map(a => a.id);
-    if (ids.length > 0) await markRead(ids);
-  }, [alerts, markRead]);
+    if (ids.length > 0) ackMutation.mutate(ids);
+  }, [alerts, ackMutation]);
 
-  return { alerts, unread, permission, requestPermission, markRead, clearAll };
+  return {
+    alerts,
+    unread: alerts.length,
+    permission,
+    requestPermission,
+    markRead,
+    clearAll,
+  };
 }

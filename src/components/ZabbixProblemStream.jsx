@@ -30,28 +30,31 @@ export default function ZabbixProblemStream({ maxRows = 60 }) {
     return () => clearInterval(id);
   }, []);
 
-  // Seed with recent history on connect.
+  // Seed with recent history on connect. Broadcaster sends oldest→newest;
+  // reverse so the newest sits at index 0.
   useSSE('problems_events_seed', (data) => {
     if (!Array.isArray(data)) return;
-    setEvents(data.slice(-maxRows));
+    const tail = data.slice(-maxRows);
+    setEvents(tail.slice().reverse());
   });
 
-  // Stream new events.
+  // Stream new events — prepend so newest stays on top.
   useSSE('problems_events', (data) => {
     const arr = Array.isArray(data) ? data : [];
     if (arr.length === 0) return;
-    setEvents(prev => [...prev, ...arr].slice(-maxRows));
+    const incoming = arr.slice().reverse(); // newest-first within the batch
+    setEvents(prev => [...incoming, ...prev].slice(0, maxRows));
   });
 
-  // Auto-scroll to newest.
+  // Auto-scroll to the newest row — which is at the top of the list.
   useEffect(() => {
     const el = listRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (el) el.scrollTop = 0;
   }, [events.length]);
 
   if (events.length === 0) {
     return (
-      <div className="card">
+      <div className="card zp-card">
         <div className="zp-header">
           <h2>Problem Event Stream</h2>
           <span className="insights-subtitle">No open/resolve events yet — waiting for change…</span>
@@ -61,10 +64,10 @@ export default function ZabbixProblemStream({ maxRows = 60 }) {
   }
 
   return (
-    <div className="card">
+    <div className="card zp-card">
       <div className="zp-header">
         <h2>Problem Event Stream</h2>
-        <span className="insights-subtitle">{events.length} events — newest at bottom</span>
+        <span className="insights-subtitle">{events.length} events — newest at top</span>
       </div>
       <div className="zp-list" ref={listRef}>
         {events.map((e, i) => {

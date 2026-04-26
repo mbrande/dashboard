@@ -1,0 +1,782 @@
+{
+  "name": "Dashboard AI Agent",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "dashboard/ask",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "da-wh",
+      "name": "POST /dashboard/ask",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "dashboard-ask"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://n8n.thisaimachine.com/webhook/zabbix/servers",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "da-srv",
+      "name": "Get Servers",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        224,
+        0
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { _question: $('POST /dashboard/ask').first().json.body?.question || '', _servers: $json } }];"
+      },
+      "id": "da-s1",
+      "name": "Store 1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://n8n.thisaimachine.com/webhook/wazuh/live-stats",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "da-waz",
+      "name": "Get Wazuh",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        672,
+        0
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const prev = $('Store 1').first().json; return [{ json: { ...prev, _wazuh: $json } }];"
+      },
+      "id": "da-s2",
+      "name": "Store 2",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://n8n.thisaimachine.com/webhook/wazuh/insights",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "da-ins",
+      "name": "Get Insights",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        0
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const prev = $('Store 2').first().json; return [{ json: { ...prev, _insights: $json } }];"
+      },
+      "id": "da-s3",
+      "name": "Store 3",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1344,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://n8n.thisaimachine.com/webhook/alerts/pending",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "da-alerts",
+      "name": "Get Alerts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1568,
+        0
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://n8n.thisaimachine.com/webhook/zabbix/network",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "da-net",
+      "name": "Get Network",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1568,
+        200
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst prev = $('Store 7').first().json;\nconst question = prev._question;\nconst devTrafficRaw = prev._devTraffic;\nconst piholeRaw = $json;\n\nconst srvObj = Array.isArray(prev._servers) ? prev._servers[0] : prev._servers;\nconst servers = srvObj?.servers || [];\nconst wazObj = Array.isArray(prev._wazuh) ? prev._wazuh[0] : prev._wazuh;\nconst insObj = Array.isArray(prev._insights) ? prev._insights[0] : prev._insights;\nconst alertObj = Array.isArray(prev._alerts) ? prev._alerts[0] : prev._alerts;\nconst networkRaw = prev._network;\nconst netObj = Array.isArray(networkRaw) ? networkRaw[0] : networkRaw;\nconst devObj = Array.isArray(devTrafficRaw) ? devTrafficRaw[0] : devTrafficRaw;\nconst phObj = Array.isArray(piholeRaw) ? piholeRaw[0] : piholeRaw;\n\nlet context = '## Current Dashboard State\\n\\n';\n\n// Alerts\nconst alerts = alertObj?.alerts || [];\nif (alerts.length > 0) {\n  context += `### Active Alerts (${alerts.length})\\n`;\n  for (const a of alerts) context += `- [${a.severity.toUpperCase()}] ${a.title}: ${a.body}\\n`;\n  context += '\\n';\n} else {\n  context += '### Active Alerts: None\\n\\n';\n}\n\n// Network\nif (netObj) {\n  context += `### Network: ${netObj.total || 0} hosts, ${netObj.available || 0} online, ${netObj.unavailable || 0} offline\\n\\n`;\n}\n\n// Device Traffic\nconst devices = devObj?.devices || [];\nif (devices.length > 0) {\n  context += '### Device Network Traffic (current)\\n';\n  context += '| Device | In | Out | Total |\\n|---|---|---|---|\\n';\n  for (const d of devices) {\n    const inK = Math.round(d.in_bps / 1000);\n    const outK = Math.round(d.out_bps / 1000);\n    context += `| ${d.name} (${d.ip}) | ${inK} Kbps | ${outK} Kbps | ${inK + outK} Kbps |\\n`;\n  }\n  context += '\\n';\n}\n\n// Pi-hole DNS\nif (phObj?.combined) {\n  const c = phObj.combined;\n  context += `### Pi-hole DNS (combined from 2 servers)\\n`;\n  context += `- Total queries: ${c.total_queries?.toLocaleString()}\\n`;\n  context += `- Blocked: ${c.blocked?.toLocaleString()} (${c.percent_blocked?.toFixed(1)}%)\\n`;\n  context += `- Cached: ${c.cached?.toLocaleString()}\\n\\n`;\n\n  if (phObj.servers?.length > 0) {\n    context += '**Per-server:**\\n';\n    for (const s of phObj.servers) {\n      context += `- ${s.name} (${s.ip}): ${s.total} queries, ${s.blocked} blocked (${s.percent_blocked?.toFixed(1)}%)\\n`;\n    }\n    context += '\\n';\n  }\n\n  if (phObj.top_clients?.length > 0) {\n    context += '**Top DNS clients:**\\n';\n    for (const cl of phObj.top_clients.slice(0, 5)) {\n      context += `- ${cl.name || cl.ip}: ${cl.count?.toLocaleString()} queries\\n`;\n    }\n    context += '\\n';\n  }\n\n  if (phObj.top_blocked?.length > 0) {\n    context += '**Top blocked domains:**\\n';\n    for (const b of phObj.top_blocked.slice(0, 5)) {\n      context += `- ${b.domain}: ${b.count?.toLocaleString()} blocked\\n`;\n    }\n    context += '\\n';\n  }\n}\n\n\n// Dashboard Auth Events (basic auth 401/403 against the home dashboard).\n// The summary endpoint classifies each 401 into real_attempts (bad password),\n// asset_probes (browsers fetching favicons/manifests without creds — normal),\n// monitor_probes (Zabbix/Ansible health checks), and endpoint_probes (everything else).\n// The \"concerning\" bucket is external IPs with real_attempts or endpoint_probes —\n// the only number a human or assistant should headline.\nconst authRaw = prev._auth;\nconst authObj = Array.isArray(authRaw) ? authRaw[0] : authRaw;\nif (authObj) {\n  const cls = authObj.classification || {};\n  const concerning = authObj.concerning || { total: 0, by_ip: [] };\n  const ext = authObj.external || {};\n  const windowDays = authObj.window_days || 7;\n\n  context += `### Dashboard Auth Events (last ${windowDays}d)\\n`;\n\n  if ((concerning.total || 0) === 0) {\n    context += `- No suspicious authentication activity. `;\n    context += `The dashboard received ${authObj.total || 0} credential-less 401s: `;\n    context += `${cls.monitor_probes || 0} from internal monitoring (Zabbix, Ansible health-checks), `;\n    context += `${cls.asset_probes || 0} from browsers fetching favicons/manifests/static assets without Basic Auth creds (this is normal browser behavior, not an attack), `;\n    context += `and ${cls.endpoint_probes || 0} other probes. Zero bad-password attempts.\\n\\n`;\n  } else {\n    context += `- ${concerning.total} concerning event(s) from external IPs: `;\n    context += `${ext.real_attempts || 0} bad-password, ${ext.endpoint_probes || 0} endpoint probe(s).\\n`;\n    if (concerning.by_ip && concerning.by_ip.length > 0) {\n      context += '**Concerning source IPs:**\\n';\n      for (const ip of concerning.by_ip.slice(0, 10)) {\n        const kind = ip.real_attempts > 0 ? 'bad-password' : 'endpoint-probe';\n        context += `- ${ip.ip}: ${ip.count} (${kind}), last ${ip.last_seen}\\n`;\n      }\n    }\n    context += `- Context (not attacks): ${cls.monitor_probes || 0} internal monitoring probes + ${cls.asset_probes || 0} browser asset fetches also produced 401s in the same window.\\n\\n`;\n  }\n\n  // Only surface bad-password attempts if any actually exist.\n  const realAttempts = (authObj.recent || []).filter(r => r.had_auth).slice(0, 5);\n  if (realAttempts.length > 0) {\n    context += '**Recent bad-password attempts:**\\n';\n    for (const r of realAttempts) {\n      context += `- ${r.occurred_at} ${r.src_ip} ${r.method} ${r.path} (UA: ${(r.user_agent||'').slice(0,60)})\\n`;\n    }\n    context += '\\n';\n  }\n}\n\n// Servers\nif (servers.length > 0) {\n  context += '### Servers\\n';\n  context += '| Name | CPU | Memory | Disk | Status |\\n|---|---|---|---|---|\\n';\n  for (const s of servers) {\n    const status = s.available === false ? 'OFFLINE' : 'Online';\n    context += `| ${s.name} | ${s.cpu ?? 'n/a'}% | ${s.memory ?? 'n/a'}% | ${s.disk_pused ?? 'n/a'}% | ${status} |\\n`;\n  }\n  context += '\\n';\n}\n\n// Wazuh\nif (wazObj) {\n  context += `### Security (Wazuh)\\n`;\n  context += `- Total alerts (24h): ${wazObj.total_alerts ?? 'unknown'}\\n`;\n  context += `- Critical: ${wazObj.critical_alerts ?? 0}, High: ${wazObj.high_alerts ?? 0}, Medium: ${wazObj.medium_alerts ?? 0}\\n`;\n  context += `- Active agents: ${wazObj.agents_active ?? 'unknown'} / ${wazObj.agents_total ?? 'unknown'}\\n\\n`;\n}\n\n// Insights\nif (insObj) {\n  if (insObj.failed_auth?.total > 0) {\n    context += `### Failed Authentication: ${insObj.failed_auth.total} attempts\\n`;\n    for (const u of (insObj.failed_auth.by_user || [])) {\n      context += `- User \"${u.user}\" on ${u.agents?.join(', ')}: ${u.count} failures\\n`;\n    }\n    context += '\\n';\n  }\n  if (insObj.high_alerts?.length > 0) {\n    context += `### High Severity Alerts\\n`;\n    for (const a of insObj.high_alerts.slice(0, 5)) {\n      context += `- ${a.description} (x${a.count}) on ${a.agents?.map(ag => ag.name).join(', ')}\\n`;\n    }\n    context += '\\n';\n  }\n}\n\nconst systemPrompt = `You are a helpful voice assistant for a homelab dashboard. Answer questions about the current state of the infrastructure concisely and conversationally — your answers will be spoken aloud, so keep them natural and brief (2-4 sentences max unless the user asks for detail).\n\nWhen asked about authentication attempts, hacking attempts, or whether the server is under attack: headline the \"concerning\" count from the Dashboard Auth Events section, not the raw total. Credential-less 401s from internal monitoring (Zabbix, Ansible) and browser asset fetches (favicons, manifests) are NOT attacks — do not describe them as \"failed authentication attempts\" or \"hacking attempts.\" If the concerning count is zero, say so plainly.\n\nYou have access to real-time data from Zabbix (servers, network traffic), Wazuh (security), Pi-hole (DNS filtering), and the alert system.\n\n${context}\n\nAnswer based on this data. Be specific with numbers and server names.`;\n\nconst requestBody = JSON.stringify({\n  model: 'gpt-4o-mini',\n  messages: [\n    { role: 'system', content: systemPrompt },\n    { role: 'user', content: question }\n  ],\n  temperature: 0.5,\n  max_tokens: 300\n});\n\nreturn [{ json: { requestBody } }];\n"
+      },
+      "id": "da-build",
+      "name": "Build AI Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1792,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.requestBody }}",
+        "options": {}
+      },
+      "id": "da-openai",
+      "name": "Call OpenAI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2016,
+        0
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "3hmSfLDh5GvxKdKm",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst reply = $json?.choices?.[0]?.message?.content || 'Sorry, I could not process that request.';\nreturn [{ json: { reply } }];\n"
+      },
+      "id": "da-format",
+      "name": "Format Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "da-respond",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2912,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const prev = $('Store 3').first().json; return [{ json: { ...prev, _alerts: $json } }];"
+      },
+      "id": "da-s4",
+      "name": "Store 4",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1792,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "dashboard/transcribe",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "id": "dt-wh",
+      "name": "POST /dashboard/transcribe",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        400
+      ],
+      "webhookId": "dashboard-transcribe"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/audio/transcriptions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formData",
+              "name": "model",
+              "value": "whisper-1"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "file"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "dt-whisper",
+      "name": "Whisper Transcribe",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        224,
+        400
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "3hmSfLDh5GvxKdKm",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst text = $json.text || '';\nreturn [{ json: { text } }];\n"
+      },
+      "id": "dt-format",
+      "name": "Format Transcription",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "dt-respond",
+      "name": "Respond Transcription",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        672,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "dashboard/speak",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "ds-wh",
+      "name": "POST /dashboard/speak",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        800
+      ],
+      "webhookId": "dashboard-speak"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/audio/speech",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'tts-1', voice: 'nova', input: $json.body.text || 'Nothing to say' }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": false,
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "ds-tts",
+      "name": "OpenAI TTS",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        224,
+        800
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "3hmSfLDh5GvxKdKm",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "binary",
+        "responseBody": "data",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "audio/mpeg"
+              },
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "id": "ds-respond",
+      "name": "Respond Audio",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        448,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const prev = $('Store 4').first().json; return [{ json: { ...prev, _network: $json } }];"
+      },
+      "id": "da-s5",
+      "name": "Store 5",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1680,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://n8n.thisaimachine.com/webhook/zabbix/device-traffic",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "da-devtraffic",
+      "name": "Get Device Traffic",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1680,
+        0
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const prev = $('Store 5').first().json; return [{ json: { ...prev, _devTraffic: $json } }];"
+      },
+      "id": "da-s6",
+      "name": "Store 6",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1792,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://n8n.thisaimachine.com/webhook/pihole/stats",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "da-pihole",
+      "name": "Get Pi-hole",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1900,
+        0
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://n8n.thisaimachine.com/webhook/dashboard-auth/summary",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "agent-get-auth",
+      "name": "Get Dashboard Auth",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2400,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const prev = $('Store 6').first().json; return [{ json: { ...prev, _auth: $json } }];"
+      },
+      "id": "agent-store-7",
+      "name": "Store 7",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2600,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "POST /dashboard/ask": {
+      "main": [
+        [
+          {
+            "node": "Get Servers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Servers": {
+      "main": [
+        [
+          {
+            "node": "Store 1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store 1": {
+      "main": [
+        [
+          {
+            "node": "Get Wazuh",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Wazuh": {
+      "main": [
+        [
+          {
+            "node": "Store 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store 2": {
+      "main": [
+        [
+          {
+            "node": "Get Insights",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Insights": {
+      "main": [
+        [
+          {
+            "node": "Store 3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store 3": {
+      "main": [
+        [
+          {
+            "node": "Get Alerts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Alerts": {
+      "main": [
+        [
+          {
+            "node": "Store 4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Network": {
+      "main": [
+        [
+          {
+            "node": "Store 5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build AI Prompt": {
+      "main": [
+        [
+          {
+            "node": "Call OpenAI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call OpenAI": {
+      "main": [
+        [
+          {
+            "node": "Format Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Reply": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store 4": {
+      "main": [
+        [
+          {
+            "node": "Get Network",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST /dashboard/transcribe": {
+      "main": [
+        [
+          {
+            "node": "Whisper Transcribe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Whisper Transcribe": {
+      "main": [
+        [
+          {
+            "node": "Format Transcription",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Transcription": {
+      "main": [
+        [
+          {
+            "node": "Respond Transcription",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST /dashboard/speak": {
+      "main": [
+        [
+          {
+            "node": "OpenAI TTS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI TTS": {
+      "main": [
+        [
+          {
+            "node": "Respond Audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store 5": {
+      "main": [
+        [
+          {
+            "node": "Get Device Traffic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Device Traffic": {
+      "main": [
+        [
+          {
+            "node": "Store 6",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store 6": {
+      "main": [
+        [
+          {
+            "node": "Get Dashboard Auth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Pi-hole": {
+      "main": [
+        [
+          {
+            "node": "Build AI Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Dashboard Auth": {
+      "main": [
+        [
+          {
+            "node": "Store 7",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store 7": {
+      "main": [
+        [
+          {
+            "node": "Get Pi-hole",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  }
+}

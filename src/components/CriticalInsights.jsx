@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
+import { useQuery } from '@tanstack/react-query';
 
 const BASE = process.env.REACT_APP_N8N_BASE_URL;
+const unwrap = (d) => (Array.isArray(d) ? d[0] : d);
 
 // Wazuh severity: CRIT=15, HIGH=12-14, MED=7-11, LOW=0-6
 const levelColor = (level) => {
@@ -11,19 +13,12 @@ const levelColor = (level) => {
 };
 
 export default function CriticalInsights() {
-  const [data, setData] = useState(null);
-
-  useEffect(() => {
-    const load = () => {
-      fetch(`${BASE}/wazuh/insights`)
-        .then(r => r.json())
-        .then(d => setData(Array.isArray(d) ? d[0] : d))
-        .catch(() => {});
-    };
-    load();
-    const interval = setInterval(load, 60000);
-    return () => clearInterval(interval);
-  }, []);
+  const { data } = useQuery({
+    queryKey: ['wazuh', 'insights'],
+    queryFn: () => fetch(`${BASE}/wazuh/insights`).then(r => r.json()),
+    refetchInterval: 60000,
+    select: unwrap,
+  });
 
   if (!data) return null;
 

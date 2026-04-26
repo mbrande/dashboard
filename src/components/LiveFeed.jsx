@@ -1,7 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSSE } from '../hooks/useSSE';
 
 const BASE = process.env.REACT_APP_N8N_BASE_URL;
+const liveFeedKey = ['wazuh', 'live-feed'];
+const unwrap = (d) => (Array.isArray(d) ? d[0] : d);
 
 // Wazuh severity: CRIT=15, HIGH=12-14, MED=7-11, LOW=0-6
 const levelColor = (level) => {
@@ -21,28 +24,21 @@ function timeAgo(ts) {
 }
 
 export default function LiveFeed() {
-  const [feed, setFeed] = useState(null);
   const [paused, setPaused] = useState(false);
   const feedRef = useRef(null);
+  const qc = useQueryClient();
 
-  useEffect(() => {
-    const load = () => {
-      if (paused) return;
-      fetch(`${BASE}/wazuh/live-feed`)
-        .then(r => r.json())
-        .then(d => setFeed(Array.isArray(d) ? d[0] : d))
-        .catch(() => {});
-    };
-    load();
-    const interval = setInterval(load, 15000);
-    return () => clearInterval(interval);
-  }, [paused]);
+  const { data: feed } = useQuery({
+    queryKey: liveFeedKey,
+    queryFn: () => fetch(`${BASE}/wazuh/live-feed`).then(r => r.json()),
+    refetchInterval: paused ? false : 15000,
+    select: unwrap,
+  });
 
   // Real-time: SSE pushes new feed snapshots as the broadcaster refreshes.
   useSSE('wazuh_feed', (data) => {
     if (paused) return;
-    const obj = Array.isArray(data) ? data[0] : data;
-    if (obj) setFeed(obj);
+    qc.setQueryData(liveFeedKey, data);
   });
 
   if (!feed) return null;

@@ -1,7 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSSE } from '../hooks/useSSE';
 
 const BASE = process.env.REACT_APP_N8N_BASE_URL;
+const authSummaryKey = ['dashboard-auth', 'summary'];
+const unwrap = (d) => (Array.isArray(d) ? d[0] : d);
 
 function timeAgo(ts) {
   if (!ts) return '';
@@ -28,23 +31,16 @@ function SeenRange({ first, last }) {
 }
 
 export default function DashboardAuthEvents() {
-  const [data, setData] = useState(null);
-
-  useEffect(() => {
-    const load = () => {
-      fetch(`${BASE}/dashboard-auth/summary`)
-        .then(r => r.json())
-        .then(d => setData(Array.isArray(d) ? d[0] : d))
-        .catch(() => {});
-    };
-    load();
-    const interval = setInterval(load, 60000);
-    return () => clearInterval(interval);
-  }, []);
+  const qc = useQueryClient();
+  const { data } = useQuery({
+    queryKey: authSummaryKey,
+    queryFn: () => fetch(`${BASE}/dashboard-auth/summary`).then(r => r.json()),
+    refetchInterval: 60000,
+    select: unwrap,
+  });
 
   useSSE('auth_summary', (payload) => {
-    const obj = Array.isArray(payload) ? payload[0] : payload;
-    if (obj) setData(obj);
+    qc.setQueryData(authSummaryKey, payload);
   });
 
   if (!data || (data.total ?? 0) === 0) return null;
