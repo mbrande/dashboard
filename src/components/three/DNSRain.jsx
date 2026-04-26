@@ -1,125 +1,165 @@
-import React, { useRef, useMemo, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, Text } from '@react-three/drei';
-import * as THREE from 'three';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { useSSE } from '../../hooks/useSSE';
 
 const BASE = process.env.REACT_APP_N8N_BASE_URL;
 
-const POOL_SIZE = 800;
-const FALL_SPEED = 4.5;        // units/sec
-const SPAWN_HEIGHT = 18;
-const FLOOR = -0.1;
-const FIELD_RADIUS = 14;
-const MAX_PARTICLES_PER_PUSH = 250;
-const SPAWN_WINDOW_MS = 4500;  // spread spawns across this window
+const POOL_SIZE = 80;
+const FALL_SPEED = 2.2;
+const SPAWN_HEIGHT = 14;
+const FLOOR = -0.2;
+const FIELD_RADIUS = 13;
 
-const TYPE = { BLOCKED: 0, CACHED: 1, ALLOWED: 2 };
-const TYPE_COLORS = ['#ea4335', '#1a73e8', '#34a853'];
+const TYPE = { BLOCKED: 0, CACHED: 1, FORWARDED: 2 };
+const TYPE_COLORS = ['#ff5b5b', '#5ba8ff', '#5cd97a'];
+
+function classifyStatus(rawStatus) {
+  const s = (rawStatus || '').toUpperCase();
+  if (s.includes('BLOCK') || s === 'GRAVITY' || s.includes('REGEX') || s.includes('DENY') ||
+      s.includes('BLACKLIST') || s.includes('NULL') || s.includes('NXDOMAIN')) return TYPE.BLOCKED;
+  if (s.startsWith('CACHE')) return TYPE.CACHED;
+  return TYPE.FORWARDED;
+}
+
+const truncate = (s, n) => (s && s.length > n ? s.slice(0, n - 1) + '…' : (s || ''));
 
 // ----------------------------------------------------------------------------
-// Particle field — instanced mesh pool, fed by an external `spawn(count, type)`
-// callback registered into a ref so the SSE handler can push without re-rendering.
+// Particle field. Each slot is a <group> with a domain Text and a client Text.
+// All updates are imperative via refs so React doesn't re-render every frame.
 // ----------------------------------------------------------------------------
 function ParticleField({ spawnerRef }) {
-  const meshRef = useRef();
-  const dummy = useMemo(() => new THREE.Object3D(), []);
-  const colorTmp = useMemo(() => new THREE.Color(), []);
-  const particles = useRef(
-    Array.from({ length: POOL_SIZE }, () => ({ active: false, x: 0, y: 0, z: 0, type: 0 }))
+  const groupRefs = useRef(new Array(POOL_SIZE).fill(null));
+  const domainRefs = useRef(new Array(POOL_SIZE).fill(null));
+  const clientRefs = useRef(new Array(POOL_SIZE).fill(null));
+  const slots = useRef(
+    Array.from({ length: POOL_SIZE }, () => ({ active: false, x: 0, y: 0, z: 0 }))
   );
-  const spawnQueue = useRef([]);
 
   useEffect(() => {
-    spawnerRef.current = (count, type) => {
-      const now = performance.now();
-      const cap = Math.min(count, MAX_PARTICLES_PER_PUSH);
-      for (let i = 0; i < cap; i++) {
-        spawnQueue.current.push({ type, t: now + Math.random() * SPAWN_WINDOW_MS });
+    spawnerRef.current = (queries) => {
+      for (const q of queries) {
+        const idx = slots.current.findIndex(s => !s.active);
+        if (idx < 0) break; // pool full
+        const s = slots.current[idx];
+        s.active = true;
+        s.x = (Math.random() - 0.5) * FIELD_RADIUS * 2;
+        s.z = (Math.random() - 0.5) * FIELD_RADIUS * 2;
+        s.y = SPAWN_HEIGHT + Math.random() * 2;
+
+        const g = groupRefs.current[idx];
+        const dom = domainRefs.current[idx];
+        const cli = clientRefs.current[idx];
+        if (g) {
+          g.position.set(s.x, s.y, s.z);
+          g.visible = true;
+        }
+        if (dom) {
+          dom.text = truncate(q.domain, 36);
+          dom.color = TYPE_COLORS[q.type];
+          if (typeof dom.sync === 'function') dom.sync();
+        }
+        if (cli) {
+          cli.text = truncate(q.client, 30);
+          if (typeof cli.sync === 'function') cli.sync();
+        }
       }
     };
   }, [spawnerRef]);
 
   useFrame((_, delta) => {
-    const m = meshRef.current;
-    if (!m) return;
-
-    // Drain spawn queue: only items whose scheduled time has passed.
-    const now = performance.now();
-    const remaining = [];
-    for (const item of spawnQueue.current) {
-      if (item.t <= now) {
-        const slot = particles.current.findIndex(p => !p.active);
-        if (slot < 0) continue; // pool full; drop
-        const p = particles.current[slot];
-        p.active = true;
-        p.type = item.type;
-        p.x = (Math.random() - 0.5) * FIELD_RADIUS * 2;
-        p.z = (Math.random() - 0.5) * FIELD_RADIUS * 2;
-        p.y = SPAWN_HEIGHT + Math.random() * 3;
-      } else {
-        remaining.push(item);
-      }
-    }
-    spawnQueue.current = remaining;
-
-    // Step + write matrices/colors.
+    const dt = Math.min(delta, 0.1);
     for (let i = 0; i < POOL_SIZE; i++) {
-      const p = particles.current[i];
-      if (p.active) {
-        p.y -= FALL_SPEED * delta;
-        if (p.y < FLOOR) p.active = false;
-      }
-      if (p.active) {
-        dummy.position.set(p.x, p.y, p.z);
-        dummy.scale.setScalar(0.18);
+      const s = slots.current[i];
+      const g = groupRefs.current[i];
+      if (!g || !s.active) continue;
+      s.y -= FALL_SPEED * dt;
+      if (s.y < FLOOR) {
+        s.active = false;
+        g.visible = false;
       } else {
-        dummy.position.set(0, -10000, 0);
-        dummy.scale.setScalar(0);
+        g.position.y = s.y;
       }
-      dummy.updateMatrix();
-      m.setMatrixAt(i, dummy.matrix);
-      colorTmp.set(TYPE_COLORS[p.type]);
-      m.setColorAt(i, colorTmp);
     }
-    m.instanceMatrix.needsUpdate = true;
-    if (m.instanceColor) m.instanceColor.needsUpdate = true;
   });
 
   return (
-    <instancedMesh ref={meshRef} args={[undefined, undefined, POOL_SIZE]}>
-      <sphereGeometry args={[1, 8, 8]} />
-      <meshStandardMaterial roughness={0.4} metalness={0.1} />
-    </instancedMesh>
+    <>
+      {Array.from({ length: POOL_SIZE }).map((_, i) => (
+        <group key={i} ref={el => (groupRefs.current[i] = el)} visible={false}>
+          {/* Domain on top, color-coded by status */}
+          <Text
+            ref={el => (domainRefs.current[i] = el)}
+            fontSize={0.42}
+            anchorX="center"
+            anchorY="middle"
+            outlineWidth={0.025}
+            outlineColor="#000000"
+          >
+            {' '}
+          </Text>
+          {/* Requesting client below, dim grey */}
+          <Text
+            ref={el => (clientRefs.current[i] = el)}
+            position={[0, -0.45, 0]}
+            fontSize={0.26}
+            color="#9aa0a6"
+            anchorX="center"
+            anchorY="middle"
+            outlineWidth={0.015}
+            outlineColor="#000000"
+          >
+            {' '}
+          </Text>
+        </group>
+      ))}
+    </>
   );
 }
 
 // ----------------------------------------------------------------------------
-// Top blocked domains as growing pillars.
+// Top-blocked-domain pillars at the back. Spaced + smaller cap to avoid label
+// overlap.
 // ----------------------------------------------------------------------------
 function BlockedColumns({ topBlocked }) {
   if (!topBlocked || topBlocked.length === 0) return null;
-  const items = topBlocked.slice(0, 8);
+  const items = topBlocked.slice(0, 6);
   const max = Math.max(...items.map(d => d.count), 1);
+  const spacing = 5.0; // wider so domain labels don't overlap
 
   return (
-    <group position={[0, 0, -10]}>
+    <group position={[0, 0, -12]}>
       {items.map((d, i) => {
-        const x = (i - (items.length - 1) / 2) * 2.2;
+        const x = (i - (items.length - 1) / 2) * spacing;
         const h = (d.count / max) * 7 + 0.3;
-        const label = d.domain.length > 22 ? d.domain.slice(0, 20) + '…' : d.domain;
+        const label = truncate(d.domain, 22);
         return (
           <group key={d.domain} position={[x, 0, 0]}>
             <mesh position={[0, h / 2, 0]}>
-              <boxGeometry args={[1.4, h, 1.4]} />
+              <boxGeometry args={[1.6, h, 1.6]} />
               <meshStandardMaterial color="#ea4335" transparent opacity={0.55} roughness={0.3} />
             </mesh>
-            <Text position={[0, h + 0.6, 0]} fontSize={0.32} color="#ffffff" anchorX="center" anchorY="middle">
+            <Text
+              position={[0, h + 0.65, 0]}
+              fontSize={0.32}
+              color="#ffffff"
+              anchorX="center"
+              anchorY="middle"
+              outlineWidth={0.015}
+              outlineColor="#000000"
+              maxWidth={spacing - 0.3}
+            >
               {label}
             </Text>
-            <Text position={[0, h + 0.25, 0]} fontSize={0.28} color="#ea4335" anchorX="center" anchorY="middle">
+            <Text
+              position={[0, h + 0.25, 0]}
+              fontSize={0.28}
+              color="#ea4335"
+              anchorX="center"
+              anchorY="middle"
+            >
               {d.count.toLocaleString()}
             </Text>
           </group>
@@ -143,42 +183,46 @@ function GridLines() {
 }
 
 // ----------------------------------------------------------------------------
-// SSE-driven spawner: synthesizes per-query particles from delta of aggregate
-// counts pushed every ~5s.
+// SSE-driven spawner.
 // ----------------------------------------------------------------------------
-function useDNSSpawner(spawnerRef, onTick) {
-  const prev = useRef(null);
+function useQueryStream(spawnerRef, onTick) {
+  const recent = useRef([]);
+  const lastPushAt = useRef(performance.now());
 
-  useSSE('pihole_stats', (payload) => {
-    const obj = Array.isArray(payload) ? payload[0] : payload;
-    const c = obj?.combined;
-    if (!c) return;
-    const blocked = c.blocked || 0;
-    const cached = c.cached || 0;
-    const total = c.total_queries || 0;
-    const allowed = Math.max(0, total - blocked - cached);
+  useSSE('pihole_queries', (payload) => {
+    const queries = Array.isArray(payload) ? payload : [];
+    if (queries.length === 0) return;
 
-    if (prev.current) {
-      const dB = Math.max(0, blocked - prev.current.blocked);
-      const dC = Math.max(0, cached - prev.current.cached);
-      const dA = Math.max(0, allowed - prev.current.allowed);
-      const dT = dB + dC + dA;
-      const dtMs = performance.now() - prev.current.t;
+    const now = performance.now();
+    const elapsedS = Math.max(0.5, (now - lastPushAt.current) / 1000);
+    lastPushAt.current = now;
 
-      if (dT > 0) {
-        spawnerRef.current?.(dB, TYPE.BLOCKED);
-        spawnerRef.current?.(dC, TYPE.CACHED);
-        spawnerRef.current?.(dA, TYPE.ALLOWED);
-      }
-      onTick({ dB, dC, dA, dT, qps: dtMs > 0 ? (dT / (dtMs / 1000)) : 0 });
-    }
+    const particles = queries.map(q => ({
+      type: classifyStatus(q.status),
+      domain: q.domain || '',
+      // Prefer the client hostname, fall back to its IP. Strip .home.arpa for brevity.
+      client: ((q.client_name || q.client_ip || '') + '').replace(/\.home\.arpa$/, '')
+    }));
+    spawnerRef.current?.(particles);
 
-    prev.current = { blocked, cached, allowed, t: performance.now() };
+    const cutoff = now - 60_000;
+    const next = recent.current.filter(e => e.ts >= cutoff);
+    for (const p of particles) next.push({ ts: now, type: p.type });
+    recent.current = next;
+
+    const count = (k) => next.filter(e => e.type === k).length;
+    onTick({
+      qps: queries.length / elapsedS,
+      blocked60: count(TYPE.BLOCKED),
+      cached60: count(TYPE.CACHED),
+      forwarded60: count(TYPE.FORWARDED),
+      total60: next.length
+    });
   });
 }
 
 // ----------------------------------------------------------------------------
-// HUD overlay (DOM, not WebGL) — current rates + back link.
+// HUD overlay.
 // ----------------------------------------------------------------------------
 function HUD({ stats, pihole }) {
   const navigate = useNavigate();
@@ -194,43 +238,50 @@ function HUD({ stats, pihole }) {
         <h2>DNS Query Rain</h2>
         <div className="dns3d-sub">
           {pihole?.combined
-            ? <>{pihole.combined.total_queries?.toLocaleString()} queries · {pihole.combined.percent_blocked?.toFixed(1)}% blocked</>
+            ? <>{pihole.combined.total_queries?.toLocaleString()} queries today · {pihole.combined.percent_blocked?.toFixed(1)}% blocked</>
             : <>connecting…</>}
         </div>
       </div>
 
       <div className="dns3d-hud-tr">
         <div className="dns3d-stat">
-          <span className="dns3d-stat-val" style={{ color: TYPE_COLORS[TYPE.BLOCKED] }}>{stats.dB}</span>
+          <span className="dns3d-stat-val" style={{ color: TYPE_COLORS[TYPE.BLOCKED] }}>{stats.blocked60}</span>
           <span className="dns3d-stat-lbl">blocked</span>
         </div>
         <div className="dns3d-stat">
-          <span className="dns3d-stat-val" style={{ color: TYPE_COLORS[TYPE.CACHED] }}>{stats.dC}</span>
+          <span className="dns3d-stat-val" style={{ color: TYPE_COLORS[TYPE.CACHED] }}>{stats.cached60}</span>
           <span className="dns3d-stat-lbl">cached</span>
         </div>
         <div className="dns3d-stat">
-          <span className="dns3d-stat-val" style={{ color: TYPE_COLORS[TYPE.ALLOWED] }}>{stats.dA}</span>
+          <span className="dns3d-stat-val" style={{ color: TYPE_COLORS[TYPE.FORWARDED] }}>{stats.forwarded60}</span>
           <span className="dns3d-stat-lbl">forwarded</span>
         </div>
         <div className="dns3d-stat">
-          <span className="dns3d-stat-val">{stats.qps.toFixed(1)}</span>
+          <span className="dns3d-stat-val">{stats.qps.toFixed(0)}</span>
           <span className="dns3d-stat-lbl">qps</span>
+        </div>
+        <div className="dns3d-stat">
+          <span className="dns3d-stat-val">{stats.total60}</span>
+          <span className="dns3d-stat-lbl">last 60s</span>
         </div>
       </div>
 
-      <div className="dns3d-hud-bl">drag to rotate · scroll to zoom · right-drag to pan</div>
+      <div className="dns3d-hud-bl">
+        drag to rotate · scroll to zoom · right-drag to pan · pool {POOL_SIZE} (oldest queries drop)
+      </div>
     </>
   );
 }
 
 // ----------------------------------------------------------------------------
-// Top-level component.
+// Top-level.
 // ----------------------------------------------------------------------------
 export default function DNSRain() {
   const spawnerRef = useRef(null);
-  const [stats, setStats] = useState({ dB: 0, dC: 0, dA: 0, dT: 0, qps: 0 });
+  const [stats, setStats] = useState({
+    qps: 0, blocked60: 0, cached60: 0, forwarded60: 0, total60: 0
+  });
 
-  // Seed the columns immediately; SSE will overwrite this within ~5s.
   const { data: pihole } = useQuery({
     queryKey: ['pihole', 'stats'],
     queryFn: () => fetch(`${BASE}/pihole/stats`).then(r => r.json()),
@@ -238,15 +289,14 @@ export default function DNSRain() {
     select: (d) => (Array.isArray(d) ? d[0] : d),
   });
 
-  useDNSSpawner(spawnerRef, setStats);
+  useQueryStream(spawnerRef, setStats);
 
   return (
     <div className="dns3d-root">
-      <Canvas camera={{ position: [0, 8, 22], fov: 55 }} dpr={[1, 2]} shadows>
+      <Canvas camera={{ position: [0, 8, 22], fov: 55 }} dpr={[1, 2]}>
         <color attach="background" args={['#05070b']} />
-        <fog attach="fog" args={['#05070b', 25, 55]} />
-        <ambientLight intensity={0.35} />
-        <directionalLight position={[10, 20, 5]} intensity={1.1} castShadow />
+        <ambientLight intensity={0.65} />
+        <directionalLight position={[10, 20, 5]} intensity={0.8} />
         <pointLight position={[-15, 10, -10]} intensity={0.4} color="#1a73e8" />
 
         <Floor />

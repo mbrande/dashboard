@@ -1,4 +1,4 @@
-import React, { useState, lazy, Suspense } from 'react';
+import React, { useState, useMemo, lazy, Suspense } from 'react';
 import { useWazuhData } from '../hooks/useWazuhData';
 import { useSSEStatus } from '../hooks/useSSE';
 import ThreatOverview, { TopRules } from './ThreatOverview';
@@ -20,6 +20,34 @@ export default function SecurityPage() {
   const [severityFilter, setSeverityFilter] = useState(null);
   const sseConnected = useSSEStatus();
 
+  // Derive severity counts from the same indexer-sourced rules the modal shows.
+  // Thresholds match Wazuh's defaults: CRIT=15, HIGH=12-14, MED=7-11, LOW=0-6.
+  // Memoize so memoized chart children don't re-render on unrelated state churn.
+  const latest = useMemo(() => {
+    if (!live) return null;
+    const derived = (rules || []).reduce((acc, r) => {
+      const hits = r.hit_count || 0;
+      acc.total += hits;
+      if (r.rule_level >= 15) acc.critical += hits;
+      else if (r.rule_level >= 12) acc.high += hits;
+      else if (r.rule_level >= 7) acc.medium += hits;
+      return acc;
+    }, { total: 0, critical: 0, high: 0, medium: 0 });
+    return {
+      total_alerts: derived.total,
+      critical_alerts: derived.critical,
+      high_alerts: derived.high,
+      medium_alerts: derived.medium,
+      agents_active: live.agents_active,
+      agent_count: live.agents_total
+    };
+  }, [live, rules]);
+
+  const chartTrends = useMemo(
+    () => (live?.hourly_trend?.length > 0 ? live.hourly_trend : trends),
+    [live?.hourly_trend, trends]
+  );
+
   if (loading) {
     return <div className="page-loading"><div className="spinner" /><span>Connecting to Wazuh...</span></div>;
   }
@@ -33,28 +61,6 @@ export default function SecurityPage() {
       </div>
     );
   }
-
-  // Derive severity counts from the same indexer-sourced rules the modal shows.
-  // Thresholds match Wazuh's defaults: CRIT=15, HIGH=12-14, MED=7-11, LOW=0-6.
-  const derived = (rules || []).reduce((acc, r) => {
-    const hits = r.hit_count || 0;
-    acc.total += hits;
-    if (r.rule_level >= 15) acc.critical += hits;
-    else if (r.rule_level >= 12) acc.high += hits;
-    else if (r.rule_level >= 7) acc.medium += hits;
-    return acc;
-  }, { total: 0, critical: 0, high: 0, medium: 0 });
-
-  const latest = live ? {
-    total_alerts: derived.total,
-    critical_alerts: derived.critical,
-    high_alerts: derived.high,
-    medium_alerts: derived.medium,
-    agents_active: live.agents_active,
-    agent_count: live.agents_total
-  } : null;
-
-  const chartTrends = live?.hourly_trend?.length > 0 ? live.hourly_trend : trends;
 
   return (
     <div className="security-page page-enter">

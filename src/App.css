@@ -1494,3 +1494,247 @@ body.panel-open { overflow: hidden; }
   letter-spacing: 0.08em;
   margin-top: 4px;
 }
+
+/* ---- Service Health ---- */
+.services-page { padding: 0 4px; }
+
+.svc-summary-pill {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 12px; border-radius: 999px;
+  background: var(--bg-card); border: 1px solid var(--border);
+  font-size: 0.85rem; color: var(--text);
+}
+.svc-summary-pill.has-down { border-color: rgba(217, 48, 37, 0.4); }
+.svc-summary-down { color: var(--red); }
+
+.svc-group { margin-bottom: 20px; }
+.svc-group-title {
+  margin: 16px 0 8px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.svc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+}
+
+.svc-card {
+  position: relative;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px 10px 16px;
+  cursor: pointer;
+  transition: transform 0.12s, box-shadow 0.12s, border-color 0.12s;
+  overflow: hidden;
+}
+.svc-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  border-color: var(--accent);
+}
+.svc-card-bar {
+  position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+}
+.svc-up    .svc-card-bar { background: #34a853; }
+.svc-auth  .svc-card-bar { background: #f9ab00; }
+.svc-down  .svc-card-bar { background: #d93025; }
+
+.svc-card-row {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+}
+.svc-card-name {
+  font-size: 0.92rem; font-weight: 500; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.svc-card-status {
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.svc-up    .svc-card-status { background: rgba(52, 168, 83, 0.12); color: #137333; }
+.svc-auth  .svc-card-status { background: rgba(249, 171, 0, 0.14); color: #b06000; }
+.svc-down  .svc-card-status { background: rgba(217, 48, 37, 0.12); color: #c5221f; }
+
+.svc-card-meta {
+  display: flex; gap: 8px; align-items: center;
+  margin-top: 4px;
+  font-size: 0.72rem;
+  color: var(--text-dim);
+}
+.svc-card-error {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.68rem;
+  color: var(--red);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.svc-card-code {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+/* Service Health: 24h history row on cards */
+.svc-card-history {
+  display: flex; gap: 8px; align-items: center;
+  margin-top: 4px;
+  font-size: 0.7rem;
+  color: var(--text-dim);
+}
+.svc-uptime {
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+.svc-uptime-good { color: #34a853; }
+.svc-uptime-warn { color: #f9ab00; }
+.svc-uptime-bad  { color: #d93025; }
+.svc-last-down {
+  font-style: italic;
+  opacity: 0.7;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* Service Detail */
+.svc-back svg { vertical-align: middle; margin-right: 4px; }
+
+.svc-detail-header { padding: 8px 4px 16px; }
+.svc-detail-title {
+  display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.svc-detail-title h1 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 500;
+}
+.svc-detail-status {
+  font-size: 0.78rem;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+.svc-detail-status.svc-up    { background: rgba(52, 168, 83, 0.12); color: #137333; }
+.svc-detail-status.svc-auth  { background: rgba(249, 171, 0, 0.14); color: #b06000; }
+.svc-detail-status.svc-down  { background: rgba(217, 48, 37, 0.12); color: #c5221f; }
+
+.svc-detail-uptime-row {
+  display: flex; gap: 8px; flex-wrap: wrap;
+}
+.svc-uptime-pill {
+  display: flex; flex-direction: column;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 14px;
+  min-width: 70px;
+}
+.svc-uptime-pill-label {
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+}
+.svc-uptime-pill-val {
+  font-size: 1.05rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+}
+
+.svc-status-strip-wrap { margin-top: 12px; }
+.svc-status-strip-label {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+.svc-status-strip {
+  position: relative;
+  height: 14px;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.svc-status-segment {
+  position: absolute;
+  top: 0; bottom: 0;
+}
+
+.svc-empty {
+  padding: 16px;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.svc-incident-list {
+  display: flex; flex-direction: column; gap: 6px;
+}
+.svc-incident {
+  position: relative;
+  padding: 8px 12px 8px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.svc-incident-bar {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 4px;
+  border-radius: 6px 0 0 6px;
+}
+.svc-incident-row {
+  display: flex; align-items: center; gap: 12px;
+  font-size: 0.85rem;
+}
+.svc-incident-status {
+  font-weight: 600;
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+}
+.svc-incident-down  .svc-incident-status { color: var(--red); }
+.svc-incident-auth  .svc-incident-status { color: #b06000; }
+.svc-incident-time { color: var(--text-dim); font-size: 0.78rem; }
+.svc-incident-duration {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.78rem;
+  color: var(--text);
+}
+.svc-incident-meta {
+  display: flex; gap: 10px; align-items: center;
+  margin-top: 4px;
+  font-size: 0.7rem;
+  color: var(--text-dim);
+}
+.svc-incident-error {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  color: var(--red);
+}
+.svc-incident-code  { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+
+/* Card open-link icon */
+.svc-card-open {
+  position: absolute;
+  top: 6px; right: 6px;
+  width: 22px; height: 22px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 4px;
+  color: var(--text-dim);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s, background 0.12s, color 0.12s;
+}
+.svc-card:hover .svc-card-open { opacity: 1; }
+.svc-card-open:hover { background: rgba(26, 115, 232, 0.12); color: var(--accent); }

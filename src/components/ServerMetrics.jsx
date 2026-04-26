@@ -54,8 +54,6 @@ export default function ServerMetrics() {
     return <div className="page-loading"><div className="spinner" /><span>Loading server metrics...</span></div>;
   }
 
-  const criticalProblems = problems.filter(p => p.severity_num >= 3);
-
   return (
     <div className="metrics-page page-enter">
       <ZabbixProblemStream />

@@ -6,11 +6,24 @@ import App from './App';
 import { queryClient } from './queryClient';
 import reportWebVitals from './reportWebVitals';
 
+// Devtools only in dev — bundler tree-shakes the import in prod builds.
+const ReactQueryDevtools =
+  process.env.NODE_ENV === 'development'
+    ? React.lazy(() =>
+        import('@tanstack/react-query-devtools').then((m) => ({ default: m.ReactQueryDevtools }))
+      )
+    : null;
+
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
       <App />
+      {ReactQueryDevtools && (
+        <React.Suspense fallback={null}>
+          <ReactQueryDevtools initialIsOpen={false} buttonPosition="bottom-left" />
+        </React.Suspense>
+      )}
     </QueryClientProvider>
   </React.StrictMode>
 );

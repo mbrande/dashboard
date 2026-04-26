@@ -1,14 +1,8 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 const BASE = process.env.REACT_APP_N8N_BASE_URL;
 const unwrap = (d) => (Array.isArray(d) ? d[0] : d);
-
-const tooltipStyle = {
-  backgroundColor: '#fff', border: '1px solid #e0e0e0',
-  borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.08)'
-};
 
 function timeAgo(ts) {
   if (!ts) return '';
@@ -47,7 +41,7 @@ export default function FailedLogins() {
 
   if (!data || data.total === 0) return null;
 
-  const { total, by_agent, by_ip, by_user, recent, over_time } = data;
+  const { total, by_agent, by_ip, by_user, recent } = data;
 
   return (
     <div className="card failed-logins-card">

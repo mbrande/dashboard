@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend
@@ -11,7 +11,7 @@ const tooltipStyle = {
   boxShadow: '0 2px 8px rgba(0,0,0,0.08)'
 };
 
-export function AlertTrendArea({ trends }) {
+export const AlertTrendArea = memo(function AlertTrendArea({ trends }) {
   if (!trends || trends.length === 0) return null;
 
   const data = trends.map(t => ({
@@ -46,9 +46,9 @@ export function AlertTrendArea({ trends }) {
       </ResponsiveContainer>
     </div>
   );
-}
+});
 
-export function SyscheckTrendBar({ trends }) {
+export const SyscheckTrendBar = memo(function SyscheckTrendBar({ trends }) {
   if (!trends || trends.length === 0) return null;
 
   const data = trends.map(t => ({
@@ -74,4 +74,4 @@ export function SyscheckTrendBar({ trends }) {
       </ResponsiveContainer>
     </div>
   );
-}
+});

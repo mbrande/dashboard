@@ -1,0 +1,312 @@
+{
+  "name": "Service Health",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "services/health",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "GET /services/health",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "services-health"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT data, UNIX_TIMESTAMP(updated_at) AS updated_at_unix FROM service_health_snapshot WHERE id = 1 LIMIT 1",
+        "options": {}
+      },
+      "id": "read-snapshot",
+      "name": "Read Snapshot",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [240, 0],
+      "credentials": {
+        "mySql": { "id": "9io5uj6IpYHlzMgX", "name": "MySQL - Home DB" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT name,\n  ROUND(100.0 * SUM(status = 'up') / COUNT(*), 1) AS uptime_pct,\n  ROUND(AVG(IF(status = 'up', latency_ms, NULL))) AS avg_latency_ms,\n  COUNT(*) AS sample_count,\n  UNIX_TIMESTAMP(MAX(IF(status != 'up', ts, NULL))) AS last_down_unix\nFROM service_health_history\nWHERE ts >= NOW() - INTERVAL 24 HOUR\nGROUP BY name",
+        "options": {}
+      },
+      "id": "read-stats",
+      "name": "Read Stats",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [480, 0],
+      "credentials": {
+        "mySql": { "id": "9io5uj6IpYHlzMgX", "name": "MySQL - Home DB" }
+      }
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// Combine the cached snapshot with 24h-history stats per service.\n// Snapshot is one row; stats is one row per service name.\n\nconst snapRow = $('Read Snapshot').first()?.json;\nconst statsItems = $input.all().map(i => i.json);\n\nif (!snapRow || snapRow.data == null) {\n  return [{ json: {\n    services: [],\n    summary: { total: 0, up: 0, auth: 0, down: 0, ts: null },\n    cached: false,\n    cached_at: null,\n    cached_age_s: null\n  }}];\n}\n\nlet payload = snapRow.data;\nif (typeof payload === 'string') {\n  try { payload = JSON.parse(payload); } catch { payload = { services: [], summary: {} }; }\n}\n\n// Index stats by service name\nconst statsByName = {};\nfor (const s of statsItems) {\n  if (s && s.name) statsByName[s.name] = s;\n}\n\nconst enriched = (payload.services || []).map(svc => {\n  const st = statsByName[svc.name];\n  return {\n    ...svc,\n    uptime_24h_pct: st?.uptime_pct != null ? Number(st.uptime_pct) : null,\n    avg_latency_24h_ms: st?.avg_latency_ms != null ? Number(st.avg_latency_ms) : null,\n    sample_count_24h: st?.sample_count != null ? Number(st.sample_count) : null,\n    last_down_at: st?.last_down_unix ? new Date(Number(st.last_down_unix) * 1000).toISOString() : null\n  };\n});\n\nconst unix = Number(snapRow.updated_at_unix) || null;\nconst nowS = Math.floor(Date.now() / 1000);\nconst ageS = unix ? Math.max(0, nowS - unix) : null;\n\nreturn [{ json: {\n  ...payload,\n  services: enriched,\n  cached: true,\n  cached_at: unix ? new Date(unix * 1000).toISOString() : null,\n  cached_age_s: ageS\n}}];"
+      },
+      "id": "format-response",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [720, 0]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "respond",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [960, 0]
+    },
+
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "seconds", "secondsInterval": 30 }]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Every 30s",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 240]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "CREATE TABLE IF NOT EXISTS service_health_snapshot (\n  id TINYINT UNSIGNED PRIMARY KEY,\n  data JSON NOT NULL,\n  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP\n)",
+        "options": {}
+      },
+      "id": "init-snapshot",
+      "name": "Init Snapshot Table",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [240, 240],
+      "credentials": {
+        "mySql": { "id": "9io5uj6IpYHlzMgX", "name": "MySQL - Home DB" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "CREATE TABLE IF NOT EXISTS service_health_history (\n  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,\n  ts TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,\n  name VARCHAR(64) NOT NULL,\n  status ENUM('up','auth','down') NOT NULL,\n  latency_ms INT NULL,\n  http_code SMALLINT NULL,\n  error VARCHAR(80) NULL,\n  INDEX idx_ts (ts),\n  INDEX idx_name_ts (name, ts)\n)",
+        "options": {}
+      },
+      "id": "init-history",
+      "name": "Init History Table",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [480, 240],
+      "credentials": {
+        "mySql": { "id": "9io5uj6IpYHlzMgX", "name": "MySQL - Home DB" }
+      }
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// Health-check the homelab service inventory in parallel.\n// Source list mirrors the Drupal Links page on blackbox (/drupal/index.php/node/2).\n//\n// `link` is the human-friendly URL the user clicks (preserves .local mDNS names\n// so browsers with Bonjour resolve them correctly). `check` is what n8n hits\n// (uses IPs because the n8n container has no Avahi to resolve mDNS).\n//\n// Up = 2xx-4xx other than auth-required.\n// Auth = 401/403 (service responding but credentials needed; counts as healthy).\n// Down = network error, timeout, or 5xx.\n//\n// HTTPS services with self-signed certs: ignoreSSLIssues=true.\n\nconst services = [\n  { name: 'Home Assistant',       link: 'http://homeassistant.local:8123/',         check: 'http://192.168.0.176:8123/',           category: 'Home' },\n  { name: 'Homebridge',           link: 'http://homebridge.home.arpa:8581/',        check: 'http://homebridge.home.arpa:8581/',    category: 'Home' },\n  { name: 'MyWiki',               link: 'http://piholemini.local:8080/mediawiki',   check: 'http://192.168.0.125:8080/mediawiki/api.php?action=query&meta=siteinfo&format=json', category: 'Internal' },\n  { name: 'phpMyAdmin',           link: 'http://blackbox.local/phpmyadmin/',        check: 'http://192.168.0.55/phpmyadmin/',      category: 'Internal' },\n  { name: 'Guacamole (blackbox)', link: 'http://blackbox.local:8080/guacamole/',    check: 'http://192.168.0.55:8080/guacamole/',  category: 'Internal' },\n  { name: 'Guacamole (thevault)', link: 'http://thevault.local:8348/',              check: 'http://192.168.0.21:8348/',            category: 'Internal' },\n  { name: 'LAN Speed Test',       link: 'http://blackbox.local:3000/',              check: 'http://192.168.0.55:3000/',            category: 'Internal' },\n  { name: 'Diskstation',          link: 'https://thevault.local/',                  check: 'https://192.168.0.21/',                category: 'Storage' },\n  { name: 'Proxmox',              link: 'https://192.168.0.200:8006/',              check: 'https://192.168.0.200:8006/',          category: 'Infra' },\n  { name: 'Portainer',            link: 'http://thevault.local:9000/',              check: 'http://192.168.0.21:9000/',            category: 'Infra' },\n  { name: 'Semaphore',            link: 'http://thevault.local:3000',               check: 'http://192.168.0.21:3000',             category: 'Infra' },\n  { name: 'Pi-hole (main)',       link: 'http://192.168.0.225/admin/',              check: 'http://192.168.0.225/admin/',          category: 'DNS' },\n  { name: 'Pi-hole (mini)',       link: 'http://192.168.0.125/admin/',              check: 'http://192.168.0.125/admin/',          category: 'DNS' },\n  { name: 'Router (Synology)',    link: 'http://192.168.0.1:8000/webman/index.cgi', check: 'http://192.168.0.1:8000/',             category: 'Network' },\n  { name: 'Plex',                 link: 'http://plex.local:32400/web',              check: 'http://192.168.0.222:32400/web',       category: 'Media' },\n  { name: 'Tautulli',             link: 'http://plex.local:8181',                   check: 'http://192.168.0.222:8181',            category: 'Media' },\n  { name: 'Sabnzbd',              link: 'http://thevault.local:8775/',              check: 'http://192.168.0.21:8775/',            category: 'Media' },\n  { name: 'Sonarr',               link: 'http://thevault.local:8989/',              check: 'http://192.168.0.21:8989/',            category: 'Media' },\n  { name: 'Radarr',               link: 'http://thevault.local:7878/',              check: 'http://192.168.0.21:7878/',            category: 'Media' },\n  { name: 'Zabbix',               link: 'http://netmon.home.arpa/zabbix/',          check: 'http://192.168.0.150/zabbix/',         category: 'Monitoring' },\n  { name: 'Grafana',              link: 'http://thevault.local:3340',               check: 'http://192.168.0.21:3340',             category: 'Monitoring' },\n  { name: 'Wazuh',                link: 'https://security.home.arpa/',              check: 'https://192.168.0.223/',               category: 'Security' },\n  { name: 'OpenClaw',             link: 'https://blackbox.home.arpa:8443',          check: 'https://blackbox.home.arpa:8443',      category: 'Security' }\n];\n\nconst TIMEOUT_MS = 5000;\nconst RETRY_TIMEOUT_MS = 8000;\nconst RETRY_DELAY_MS = 800;\n\nasync function attempt(svc, timeoutMs) {\n  const t0 = Date.now();\n  try {\n    const res = await this.helpers.httpRequest({\n      method: 'GET',\n      url: svc.check,\n      timeout: timeoutMs,\n      ignoreHttpStatusErrors: true,\n      skipSslCertificateValidation: true,\n      rejectUnauthorized: false,\n      returnFullResponse: true,\n      followRedirect: false,\n      maxRedirects: 0\n    });\n    return { ok: true, http: res.statusCode, latency_ms: Date.now() - t0 };\n  } catch (e) {\n    const code = e?.cause?.code || e?.code || e?.name;\n    return { ok: false, error: code || (e?.message || '').slice(0, 80), latency_ms: Date.now() - t0 };\n  }\n}\n\nconst attemptBound = attempt.bind(this);\nconst sleep = (ms) => new Promise(r => setTimeout(r, ms));\n\nconst results = await Promise.all(services.map(async (svc) => {\n  // First attempt (5s). If it fails, wait briefly so the underlying connection\n  // pool can settle, then try once more with a longer timeout. Two clean failures\n  // = really down.\n  let r = await attemptBound(svc, TIMEOUT_MS);\n  if (!r.ok) {\n    await sleep(RETRY_DELAY_MS);\n    r = await attemptBound(svc, RETRY_TIMEOUT_MS);\n  }\n  return { ...svc, ...r };\n}));\n\nfunction classify(r) {\n  if (!r.ok) return 'down';\n  const c = r.http;\n  if (c === 401 || c === 403) return 'auth';\n  if (c >= 200 && c < 500) return 'up';\n  return 'down';\n}\n\nconst formatted = results.map(r => ({\n  name: r.name,\n  url: r.link,\n  category: r.category,\n  status: classify(r),\n  http_code: r.http || null,\n  latency_ms: r.latency_ms,\n  error: r.error || null\n}));\n\nconst summary = {\n  total: formatted.length,\n  up: formatted.filter(r => r.status === 'up').length,\n  auth: formatted.filter(r => r.status === 'auth').length,\n  down: formatted.filter(r => r.status === 'down').length,\n  ts: new Date().toISOString()\n};\n\nreturn [{ json: { services: formatted, summary } }];"
+      },
+      "id": "check-services",
+      "name": "Check Services",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [720, 240]
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// Build SQL strings for both the snapshot REPLACE and the history INSERT.\n// SQL string-literal escape: backslash doubles, single quote doubles.\nconst data = $json;\nconst services = data.services || [];\n\nconst sqlStr = (s) => s == null\n  ? 'NULL'\n  : `'${String(s).replace(/\\\\/g, '\\\\\\\\').replace(/'/g, \"''\")}'`;\nconst sqlNum = (n) => (n == null || Number.isNaN(Number(n))) ? 'NULL' : Number(n);\n\nconst snapshotBlob = JSON.stringify(data).replace(/\\\\/g, '\\\\\\\\').replace(/'/g, \"''\");\nconst snapshotSql = `REPLACE INTO service_health_snapshot (id, data) VALUES (1, '${snapshotBlob}')`;\n\nconst valuesRows = services.map(s =>\n  `(NOW(), ${sqlStr(s.name)}, ${sqlStr(s.status)}, ${sqlNum(s.latency_ms)}, ${sqlNum(s.http_code)}, ${sqlStr(s.error)})`\n).join(',\\n');\n\nconst historySql = services.length > 0\n  ? `INSERT INTO service_health_history (ts, name, status, latency_ms, http_code, error) VALUES ${valuesRows}`\n  : 'SELECT 1';\n\nreturn [{ json: { snapshot_sql: snapshotSql, history_sql: historySql } }];"
+      },
+      "id": "prep-sql",
+      "name": "Prep SQL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [960, 240]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.snapshot_sql }}",
+        "options": {}
+      },
+      "id": "save-snapshot",
+      "name": "Save Snapshot",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [1200, 240],
+      "credentials": {
+        "mySql": { "id": "9io5uj6IpYHlzMgX", "name": "MySQL - Home DB" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $('Prep SQL').first().json.history_sql }}",
+        "options": {}
+      },
+      "id": "save-history",
+      "name": "Save History",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [1440, 240],
+      "credentials": {
+        "mySql": { "id": "9io5uj6IpYHlzMgX", "name": "MySQL - Home DB" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "DELETE FROM service_health_history WHERE ts < NOW() - INTERVAL 30 DAY",
+        "options": {}
+      },
+      "id": "cleanup-history",
+      "name": "Cleanup History",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [1680, 240],
+      "credentials": {
+        "mySql": { "id": "9io5uj6IpYHlzMgX", "name": "MySQL - Home DB" }
+      }
+    },
+
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "services/history",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "history-webhook",
+      "name": "GET /services/history",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 480],
+      "webhookId": "services-history"
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// Validate + escape the name query param. Clamp hours to [1, 168].\nconst q = $('GET /services/history').first()?.json?.query || {};\nconst name = String(q.name || '');\nconst hours = Math.min(168, Math.max(1, parseInt(q.hours || '24', 10) || 24));\nconst nameSql = name.replace(/\\\\/g, '\\\\\\\\').replace(/'/g, \"''\");\nreturn [{ json: { name, name_sql: nameSql, hours } }];"
+      },
+      "id": "parse-name",
+      "name": "Parse Name",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [240, 480]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT UNIX_TIMESTAMP(ts) AS ts_unix, status, latency_ms, http_code, error\nFROM service_health_history\nWHERE name = '{{ $json.name_sql }}'\n  AND ts >= NOW() - INTERVAL {{ $json.hours }} HOUR\nORDER BY ts ASC",
+        "options": {}
+      },
+      "id": "read-points",
+      "name": "Read Points",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [480, 480],
+      "credentials": {
+        "mySql": { "id": "9io5uj6IpYHlzMgX", "name": "MySQL - Home DB" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  ROUND(100.0 * SUM(IF(ts >= NOW() - INTERVAL 1 HOUR AND status='up', 1, 0)) / NULLIF(SUM(ts >= NOW() - INTERVAL 1 HOUR), 0), 1) AS uptime_1h,\n  ROUND(100.0 * SUM(IF(ts >= NOW() - INTERVAL 24 HOUR AND status='up', 1, 0)) / NULLIF(SUM(ts >= NOW() - INTERVAL 24 HOUR), 0), 1) AS uptime_24h,\n  ROUND(100.0 * SUM(IF(status='up', 1, 0)) / NULLIF(COUNT(*), 0), 1) AS uptime_7d,\n  ROUND(AVG(IF(status='up' AND ts >= NOW() - INTERVAL 24 HOUR, latency_ms, NULL))) AS avg_latency_24h_ms,\n  COUNT(*) AS sample_count_7d\nFROM service_health_history\nWHERE name = '{{ $('Parse Name').first().json.name_sql }}'\n  AND ts >= NOW() - INTERVAL 7 DAY",
+        "options": {}
+      },
+      "id": "read-history-stats",
+      "name": "Read History Stats",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [720, 480],
+      "credentials": {
+        "mySql": { "id": "9io5uj6IpYHlzMgX", "name": "MySQL - Home DB" }
+      }
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// Combine the three upstream queries into the response shape.\n// - Bucket raw points (5min if >500 samples, else 1min)\n// - Detect incidents as consecutive non-up runs\n// - Pull stats from Read History Stats\n\nconst params = $('Parse Name').first().json;\nconst points = $('Read Points').all().map(i => i.json);\nconst stats = $input.first()?.json || {};\n\nconst bucketSizeS = points.length > 500 ? 300 : 60;\n\nfunction bucket(rows, intervalS) {\n  const buckets = new Map();\n  for (const p of rows) {\n    const t = Math.floor(Number(p.ts_unix) / intervalS) * intervalS;\n    let b = buckets.get(t);\n    if (!b) { b = { ts: t, ups: 0, downs: 0, auths: 0, total: 0, lat: 0, latN: 0 }; buckets.set(t, b); }\n    b.total++;\n    if (p.status === 'up') b.ups++;\n    else if (p.status === 'down') b.downs++;\n    else if (p.status === 'auth') b.auths++;\n    if (p.status === 'up' && p.latency_ms != null) {\n      b.lat += Number(p.latency_ms);\n      b.latN++;\n    }\n  }\n  const out = [];\n  for (const [t, b] of [...buckets.entries()].sort((a,b)=>a[0]-b[0])) {\n    let dominant = 'up';\n    if (b.downs >= b.ups && b.downs >= b.auths && b.downs > 0) dominant = 'down';\n    else if (b.auths >= b.ups && b.auths > 0) dominant = 'auth';\n    out.push({\n      ts: t * 1000,\n      latency_ms: b.latN > 0 ? Math.round(b.lat / b.latN) : null,\n      status: dominant,\n      uptime_pct: Math.round(100 * b.ups / b.total)\n    });\n  }\n  return out;\n}\n\nconst chartPoints = bucket(points, bucketSizeS);\n\n// Detect incidents = consecutive non-up samples\nconst incidents = [];\nlet cur = null;\nfor (const p of points) {\n  const tsMs = Number(p.ts_unix) * 1000;\n  if (p.status !== 'up') {\n    if (!cur) cur = { started_at: tsMs, ended_at: tsMs, status: p.status, error: p.error || null, http_code: p.http_code || null, count: 1 };\n    else {\n      cur.ended_at = tsMs;\n      cur.count++;\n      if (p.error && !cur.error) cur.error = p.error;\n      if (p.http_code && !cur.http_code) cur.http_code = p.http_code;\n      if (p.status === 'down') cur.status = 'down';\n    }\n  } else if (cur) {\n    incidents.push(cur);\n    cur = null;\n  }\n}\nif (cur) incidents.push(cur);\n\nconst formattedIncidents = incidents.map(i => ({\n  started_at: new Date(i.started_at).toISOString(),\n  ended_at: new Date(i.ended_at).toISOString(),\n  duration_s: Math.max(30, Math.round((i.ended_at - i.started_at) / 1000) + 30),\n  status: i.status,\n  error: i.error,\n  http_code: i.http_code,\n  sample_count: i.count\n})).reverse();\n\nreturn [{ json: {\n  name: params.name,\n  hours: params.hours,\n  uptime_1h_pct: stats.uptime_1h != null ? Number(stats.uptime_1h) : null,\n  uptime_24h_pct: stats.uptime_24h != null ? Number(stats.uptime_24h) : null,\n  uptime_7d_pct: stats.uptime_7d != null ? Number(stats.uptime_7d) : null,\n  avg_latency_24h_ms: stats.avg_latency_24h_ms != null ? Number(stats.avg_latency_24h_ms) : null,\n  sample_count_7d: stats.sample_count_7d != null ? Number(stats.sample_count_7d) : 0,\n  bucket_size_s: bucketSizeS,\n  points: chartPoints,\n  incidents: formattedIncidents\n}}];"
+      },
+      "id": "format-history",
+      "name": "Format History",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [960, 480]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "respond-history",
+      "name": "Respond History",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1200, 480]
+    }
+  ],
+  "connections": {
+    "GET /services/health": {
+      "main": [[{ "node": "Read Snapshot", "type": "main", "index": 0 }]]
+    },
+    "Read Snapshot": {
+      "main": [[{ "node": "Read Stats", "type": "main", "index": 0 }]]
+    },
+    "Read Stats": {
+      "main": [[{ "node": "Format Response", "type": "main", "index": 0 }]]
+    },
+    "Format Response": {
+      "main": [[{ "node": "Respond", "type": "main", "index": 0 }]]
+    },
+    "Every 30s": {
+      "main": [[{ "node": "Init Snapshot Table", "type": "main", "index": 0 }]]
+    },
+    "Init Snapshot Table": {
+      "main": [[{ "node": "Init History Table", "type": "main", "index": 0 }]]
+    },
+    "Init History Table": {
+      "main": [[{ "node": "Check Services", "type": "main", "index": 0 }]]
+    },
+    "Check Services": {
+      "main": [[{ "node": "Prep SQL", "type": "main", "index": 0 }]]
+    },
+    "Prep SQL": {
+      "main": [[{ "node": "Save Snapshot", "type": "main", "index": 0 }]]
+    },
+    "Save Snapshot": {
+      "main": [[{ "node": "Save History", "type": "main", "index": 0 }]]
+    },
+    "Save History": {
+      "main": [[{ "node": "Cleanup History", "type": "main", "index": 0 }]]
+    },
+    "GET /services/history": {
+      "main": [[{ "node": "Parse Name", "type": "main", "index": 0 }]]
+    },
+    "Parse Name": {
+      "main": [[{ "node": "Read Points", "type": "main", "index": 0 }]]
+    },
+    "Read Points": {
+      "main": [[{ "node": "Read History Stats", "type": "main", "index": 0 }]]
+    },
+    "Read History Stats": {
+      "main": [[{ "node": "Format History", "type": "main", "index": 0 }]]
+    },
+    "Format History": {
+      "main": [[{ "node": "Respond History", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {}
+}

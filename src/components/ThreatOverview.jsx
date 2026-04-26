@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import AnimatedNumber from './AnimatedNumber';
 import Sparkline from './Sparkline';
 
@@ -17,7 +17,7 @@ const levelLabel = (level) => {
   return 'LOW';
 };
 
-export default function ThreatOverview({ latest, onSeverityClick, trends }) {
+function ThreatOverview({ latest, onSeverityClick, trends }) {
   if (!latest) return null;
 
   const totalHigh = (latest.critical_alerts || 0) + (latest.high_alerts || 0);
@@ -80,7 +80,9 @@ export default function ThreatOverview({ latest, onSeverityClick, trends }) {
   );
 }
 
-export function TopRules({ rules }) {
+export default memo(ThreatOverview);
+
+export const TopRules = memo(function TopRules({ rules }) {
   if (!rules || rules.length === 0) return null;
 
   const maxHits = Math.max(...rules.map(r => r.hit_count));
@@ -133,4 +135,4 @@ export function TopRules({ rules }) {
       </div>
     </div>
   );
-}
+});

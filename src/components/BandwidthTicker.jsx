@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useSSE } from '../hooks/useSSE';
 
 function fmtBits(bps) {

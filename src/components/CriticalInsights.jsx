@@ -22,7 +22,7 @@ export default function CriticalInsights() {
 
   if (!data) return null;
 
-  const { high_alerts, failed_auth, priv_escalation, vulnerabilities, src_ips } = data;
+  const { high_alerts, failed_auth, priv_escalation, vulnerabilities } = data;
   const hasFindings = (high_alerts?.length > 0) || (failed_auth?.total > 0) ||
     (priv_escalation?.total > 0) || (vulnerabilities?.length > 0);
 

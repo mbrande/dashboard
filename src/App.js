@@ -15,6 +15,8 @@ const NetworkDashboard = lazy(() => import('./components/NetworkDashboard'));
 const NewsPage = lazy(() => import('./components/NewsPage'));
 const AlertDrawer = lazy(() => import('./components/AlertDrawer'));
 const DNSRain = lazy(() => import('./components/three/DNSRain'));
+const ServiceHealth = lazy(() => import('./components/ServiceHealth'));
+const ServiceDetail = lazy(() => import('./components/ServiceDetail'));
 
 function PageLoader() {
   return <div className="page-loading"><div className="spinner" /><span>Loading...</span></div>;
@@ -62,6 +64,22 @@ function HomePage() {
           </div>
           <div className="home-tile-label">News</div>
           <div className="home-tile-desc">AI, Music, Computers & Tech feeds</div>
+        </div>
+        <div className="home-tile" onClick={() => navigate('/services')}>
+          <div className="home-tile-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="36" height="36">
+              <rect x="3" y="3" width="7" height="7" rx="1" />
+              <rect x="14" y="3" width="7" height="7" rx="1" />
+              <rect x="3" y="14" width="7" height="7" rx="1" />
+              <rect x="14" y="14" width="7" height="7" rx="1" />
+              <circle cx="6.5" cy="6.5" r="1" fill="currentColor" />
+              <circle cx="17.5" cy="6.5" r="1" fill="currentColor" />
+              <circle cx="6.5" cy="17.5" r="1" fill="currentColor" />
+              <circle cx="17.5" cy="17.5" r="1" fill="currentColor" />
+            </svg>
+          </div>
+          <div className="home-tile-label">Services</div>
+          <div className="home-tile-desc">Health checks across the homelab</div>
         </div>
         <div className="home-tile" onClick={() => navigate('/3d/dns')}>
           <div className="home-tile-icon">
@@ -135,6 +153,7 @@ function AppContent() {
               <NavLink to="/security" className={({isActive}) => `nav-tab ${isActive ? 'active' : ''}`}>Security</NavLink>
               <NavLink to="/metrics" className={({isActive}) => `nav-tab ${isActive ? 'active' : ''}`}>Metrics</NavLink>
               <NavLink to="/network" className={({isActive}) => `nav-tab ${isActive ? 'active' : ''}`}>Network</NavLink>
+              <NavLink to="/services" className={({isActive}) => `nav-tab ${isActive ? 'active' : ''}`}>Services</NavLink>
               <NavLink to="/news" className={({isActive}) => `nav-tab ${isActive ? 'active' : ''}`}>News</NavLink>
             </div>
           </div>
@@ -148,6 +167,8 @@ function AppContent() {
               <Route path="/metrics" element={<ErrorBoundary name="Metrics"><ServerMetrics /></ErrorBoundary>} />
               <Route path="/network" element={<ErrorBoundary name="Network"><NetworkDashboard /></ErrorBoundary>} />
               <Route path="/news" element={<ErrorBoundary name="News"><NewsPage /></ErrorBoundary>} />
+              <Route path="/services" element={<ErrorBoundary name="Services"><ServiceHealth /></ErrorBoundary>} />
+              <Route path="/services/:name" element={<ErrorBoundary name="Service Detail"><ServiceDetail /></ErrorBoundary>} />
               <Route path="/3d/dns" element={<ErrorBoundary name="DNS Rain"><DNSRain /></ErrorBoundary>} />
             </Routes>
           </Suspense>
