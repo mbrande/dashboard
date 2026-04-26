@@ -1,0 +1,335 @@
+{
+  "name": "Action Layer",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "actions/catalog",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-catalog",
+      "name": "GET /actions/catalog",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "actions-catalog"
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// Public catalog of actions the AI may propose. Internal proxy details live\n// in the Dispatch Execute node; this catalog is sanitized for external view.\nconst c = {\n  list_alerts: {\n    description: 'List all currently pending alerts on the dashboard.',\n    risk: 'low',\n    readonly: true,\n    args_schema: {}\n  },\n  list_services_down: {\n    description: 'List services that are currently down or require authentication.',\n    risk: 'low',\n    readonly: true,\n    args_schema: {}\n  },\n  get_service_history: {\n    description: 'Get uptime, latency, and incidents for one service over the last N hours (default 24).',\n    risk: 'low',\n    readonly: true,\n    args_schema: { name: 'string!', hours: 'number?' },\n    example_args: { name: 'Plex', hours: 24 }\n  },\n  top_blocked_domains: {\n    description: 'List the top blocked DNS domains from Pi-hole.',\n    risk: 'low',\n    readonly: true,\n    args_schema: {}\n  },\n  recent_failed_logins: {\n    description: 'List recent Wazuh failed login attempts (broken down by IP, user, agent).',\n    risk: 'low',\n    readonly: true,\n    args_schema: {}\n  },\n  ack_alerts: {\n    description: 'Acknowledge the given alert IDs. They will be removed from the pending list.',\n    risk: 'low',\n    readonly: false,\n    args_schema: { ids: 'string[]!' },\n    example_args: { ids: ['zabbix-offline-12345'] }\n  }\n};\n\nreturn [{ json: { catalog: c, count: Object.keys(c).length } }];"
+      },
+      "id": "code-catalog",
+      "name": "Build Catalog",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [240, 0]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "resp-catalog",
+      "name": "Respond Catalog",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [480, 0]
+    },
+
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "actions/execute",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-execute",
+      "name": "POST /actions/execute",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 220],
+      "webhookId": "actions-execute"
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// Dispatch an action. Validates against the catalog, calls the underlying\n// webhook via this.helpers.httpRequest, returns the result + an args_hash for\n// the audit trail. Outputs:\n//   ok=true:  { ok, action_id, args, args_hash, result, args_json_sql }\n//   ok=false: { ok, error, action_id }\n\nconst N8N_BASE = 'https://n8n.thisaimachine.com/webhook';\n\nconst CATALOG = {\n  list_alerts: {\n    description: 'List all currently pending alerts on the dashboard.',\n    risk: 'low', readonly: true, args_schema: {},\n    proxy: { method: 'GET', url: '/alerts/pending' }\n  },\n  list_services_down: {\n    description: 'List services currently in down or auth-required status.',\n    risk: 'low', readonly: true, args_schema: {},\n    proxy: { method: 'GET', url: '/services/health', filter: 'down_only' }\n  },\n  get_service_history: {\n    description: 'Get uptime/latency history for one service over the last N hours.',\n    risk: 'low', readonly: true, args_schema: { name: 'string!', hours: 'number?' },\n    proxy: { method: 'GET', url: '/services/history', query_args: ['name', 'hours'] }\n  },\n  top_blocked_domains: {\n    description: 'Top blocked DNS domains from Pi-hole.',\n    risk: 'low', readonly: true, args_schema: {},\n    proxy: { method: 'GET', url: '/pihole/stats', extract: 'top_blocked' }\n  },\n  recent_failed_logins: {\n    description: 'Recent Wazuh failed login attempts.',\n    risk: 'low', readonly: true, args_schema: {},\n    proxy: { method: 'GET', url: '/wazuh/failed-logins' }\n  },\n  ack_alerts: {\n    description: 'Acknowledge the given alert IDs.',\n    risk: 'low', readonly: false, args_schema: { ids: 'string[]!' },\n    proxy: { method: 'POST', url: '/alerts/acknowledge', body_args: ['ids'] }\n  }\n};\n\nfunction validateArgs(schema, args) {\n  const errors = [];\n  for (const [k, spec] of Object.entries(schema)) {\n    const required = spec.endsWith('!');\n    const baseType = spec.replace(/[!?]$/, '');\n    const isArray = baseType.endsWith('[]');\n    const elemType = baseType.replace(/\\[\\]$/, '');\n    const v = args?.[k];\n    if (v === undefined || v === null) {\n      if (required) errors.push(`Missing required arg: ${k}`);\n      continue;\n    }\n    if (isArray) {\n      if (!Array.isArray(v)) { errors.push(`${k} must be array`); continue; }\n      if (elemType && !v.every(x => typeof x === elemType)) {\n        errors.push(`${k} elements must be ${elemType}`);\n      }\n    } else if (typeof v !== elemType) {\n      errors.push(`${k} must be ${elemType}`);\n    }\n  }\n  return errors;\n}\n\nfunction argsHash(args) {\n  const sortedKeys = Object.keys(args || {}).sort();\n  const canonical = JSON.stringify(args || {}, sortedKeys);\n  // 4 parallel DJB2 streams → 64 hex chars. Deterministic, sandbox-safe.\n  // Not cryptographic; only used to dedup (action_id, args) pairs.\n  let h1 = 5381n, h2 = 7853n, h3 = 9871n, h4 = 11483n;\n  const M = 0xffffffffffffffffn;\n  for (let i = 0; i < canonical.length; i++) {\n    const c = BigInt(canonical.charCodeAt(i));\n    h1 = ((h1 << 5n) + h1 + c) & M;\n    h2 = ((h2 << 5n) + h2 + c) & M;\n    h3 = ((h3 << 5n) + h3 + c) & M;\n    h4 = ((h4 << 5n) + h4 + c) & M;\n  }\n  return [h1, h2, h3, h4].map(h => h.toString(16).padStart(16, '0')).join('');\n}\n\nconst input = $input.first().json;\nconst body = input.body || input;\nconst actionId = body.id;\nconst args = body.args || {};\n\nconst action = CATALOG[actionId];\nif (!action) {\n  return [{ json: { ok: false, action_id: actionId, error: `Unknown action: ${actionId}` } }];\n}\nconst errs = validateArgs(action.args_schema || {}, args);\nif (errs.length) {\n  return [{ json: { ok: false, action_id: actionId, error: errs.join('; ') } }];\n}\n\n// Build proxy request\nconst p = action.proxy;\nlet url = N8N_BASE + p.url;\nif (p.query_args) {\n  const qs = p.query_args\n    .filter(k => args[k] !== undefined)\n    .map(k => `${encodeURIComponent(k)}=${encodeURIComponent(args[k])}`)\n    .join('&');\n  if (qs) url += '?' + qs;\n}\nconst opts = {\n  method: p.method,\n  url,\n  timeout: 10000,\n  ignoreHttpStatusErrors: true,\n  json: true\n};\nif (p.body_args) {\n  const b = {};\n  for (const k of p.body_args) if (args[k] !== undefined) b[k] = args[k];\n  opts.body = b;\n}\n\nlet result;\ntry {\n  result = await this.helpers.httpRequest(opts);\n} catch (e) {\n  return [{ json: { ok: false, action_id: actionId, error: 'proxy failed: ' + (e?.message || e) } }];\n}\n\n// Post-process\nif (p.extract) {\n  const obj = Array.isArray(result) ? result[0] : result;\n  result = obj?.[p.extract] ?? null;\n}\nif (p.filter === 'down_only') {\n  const obj = Array.isArray(result) ? result[0] : result;\n  result = (obj?.services || []).filter(s => s.status === 'down' || s.status === 'auth');\n}\n\nconst hash = argsHash(args);\nconst argsJsonSql = JSON.stringify(args).replace(/\\\\/g, '\\\\\\\\').replace(/'/g, \"''\");\nconst actionIdSql = String(actionId).replace(/'/g, \"''\");\n\nreturn [{ json: {\n  ok: true,\n  action_id: actionId,\n  action_id_sql: actionIdSql,\n  args,\n  args_hash: hash,\n  args_json_sql: argsJsonSql,\n  result\n} }];"
+      },
+      "id": "code-execute",
+      "name": "Dispatch Execute",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [240, 220]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "ok-check",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-execute-ok",
+      "name": "If Execute OK",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [480, 220]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "CREATE TABLE IF NOT EXISTS ai_action_decisions (\n  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,\n  action_id VARCHAR(64) NOT NULL,\n  args_hash CHAR(64) NOT NULL,\n  decision ENUM('accepted','dismissed') NOT NULL,\n  args_json TEXT NULL,\n  decided_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\n  INDEX idx_action_args (action_id, args_hash, decided_at),\n  INDEX idx_decided (decided_at)\n)",
+        "options": {}
+      },
+      "id": "mysql-init-execute",
+      "name": "Init Decisions (Execute)",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [720, 140],
+      "credentials": {
+        "mySql": { "id": "9io5uj6IpYHlzMgX", "name": "MySQL - Home DB" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO ai_action_decisions (action_id, args_hash, decision, args_json) VALUES ('{{ $('Dispatch Execute').first().json.action_id_sql }}', '{{ $('Dispatch Execute').first().json.args_hash }}', 'accepted', '{{ $('Dispatch Execute').first().json.args_json_sql }}')",
+        "options": {}
+      },
+      "id": "mysql-record-accept",
+      "name": "Record Accept",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [960, 140],
+      "credentials": {
+        "mySql": { "id": "9io5uj6IpYHlzMgX", "name": "MySQL - Home DB" }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($('Dispatch Execute').first().json) }}",
+        "options": {}
+      },
+      "id": "resp-execute-ok",
+      "name": "Respond Execute OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1200, 140]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseCode": 400,
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "resp-execute-fail",
+      "name": "Respond Execute Fail",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [720, 320]
+    },
+
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "actions/decision",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-decision",
+      "name": "POST /actions/decision",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 480],
+      "webhookId": "actions-decision"
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// Record a user decision (accepted or dismissed) about a previously-proposed\n// action. Frontend calls this on Dismiss; the execute path records 'accepted'\n// itself, so this is mostly the dismissal channel.\nfunction argsHash(args) {\n  const sortedKeys = Object.keys(args || {}).sort();\n  const canonical = JSON.stringify(args || {}, sortedKeys);\n  let h1 = 5381n, h2 = 7853n, h3 = 9871n, h4 = 11483n;\n  const M = 0xffffffffffffffffn;\n  for (let i = 0; i < canonical.length; i++) {\n    const c = BigInt(canonical.charCodeAt(i));\n    h1 = ((h1 << 5n) + h1 + c) & M;\n    h2 = ((h2 << 5n) + h2 + c) & M;\n    h3 = ((h3 << 5n) + h3 + c) & M;\n    h4 = ((h4 << 5n) + h4 + c) & M;\n  }\n  return [h1, h2, h3, h4].map(h => h.toString(16).padStart(16, '0')).join('');\n}\n\nconst input = $input.first().json;\nconst body = input.body || input;\nconst actionId = body.action_id;\nconst args = body.args || {};\nconst decision = body.decision;\n\nif (!actionId) return [{ json: { ok: false, error: 'action_id required' } }];\nif (decision !== 'accepted' && decision !== 'dismissed') {\n  return [{ json: { ok: false, error: \"decision must be 'accepted' or 'dismissed'\" } }];\n}\n\nconst hash = argsHash(args);\nconst argsJsonSql = JSON.stringify(args).replace(/\\\\/g, '\\\\\\\\').replace(/'/g, \"''\");\nconst actionIdSql = String(actionId).replace(/'/g, \"''\");\n\nreturn [{ json: {\n  ok: true,\n  action_id: actionId,\n  action_id_sql: actionIdSql,\n  args,\n  args_hash: hash,\n  args_json_sql: argsJsonSql,\n  decision\n} }];"
+      },
+      "id": "code-decision",
+      "name": "Build Decision",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [240, 480]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "CREATE TABLE IF NOT EXISTS ai_action_decisions (\n  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,\n  action_id VARCHAR(64) NOT NULL,\n  args_hash CHAR(64) NOT NULL,\n  decision ENUM('accepted','dismissed') NOT NULL,\n  args_json TEXT NULL,\n  decided_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\n  INDEX idx_action_args (action_id, args_hash, decided_at),\n  INDEX idx_decided (decided_at)\n)",
+        "options": {}
+      },
+      "id": "mysql-init-decision",
+      "name": "Init Decisions (Decision)",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [480, 480],
+      "credentials": {
+        "mySql": { "id": "9io5uj6IpYHlzMgX", "name": "MySQL - Home DB" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO ai_action_decisions (action_id, args_hash, decision, args_json) VALUES ('{{ $('Build Decision').first().json.action_id_sql }}', '{{ $('Build Decision').first().json.args_hash }}', '{{ $('Build Decision').first().json.decision }}', '{{ $('Build Decision').first().json.args_json_sql }}')",
+        "options": {}
+      },
+      "id": "mysql-record-decision",
+      "name": "Record Decision",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [720, 480],
+      "credentials": {
+        "mySql": { "id": "9io5uj6IpYHlzMgX", "name": "MySQL - Home DB" }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true, action_id: $('Build Decision').first().json.action_id, decision: $('Build Decision').first().json.decision }) }}",
+        "options": {}
+      },
+      "id": "resp-decision",
+      "name": "Respond Decision",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [960, 480]
+    },
+
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "actions/suppressed",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-suppressed",
+      "name": "GET /actions/suppressed",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 740],
+      "webhookId": "actions-suppressed"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "CREATE TABLE IF NOT EXISTS ai_action_decisions (\n  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,\n  action_id VARCHAR(64) NOT NULL,\n  args_hash CHAR(64) NOT NULL,\n  decision ENUM('accepted','dismissed') NOT NULL,\n  args_json TEXT NULL,\n  decided_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\n  INDEX idx_action_args (action_id, args_hash, decided_at),\n  INDEX idx_decided (decided_at)\n)",
+        "options": {}
+      },
+      "id": "mysql-init-suppressed",
+      "name": "Init Decisions (Suppressed)",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [240, 740],
+      "credentials": {
+        "mySql": { "id": "9io5uj6IpYHlzMgX", "name": "MySQL - Home DB" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT action_id, args_hash, args_json, MAX(UNIX_TIMESTAMP(decided_at)) AS dismissed_at_unix FROM ai_action_decisions WHERE decision = 'dismissed' AND decided_at >= NOW() - INTERVAL {{ Number($('GET /actions/suppressed').first().json.query.days) || 7 }} DAY GROUP BY action_id, args_hash, args_json ORDER BY dismissed_at_unix DESC LIMIT 200",
+        "options": {}
+      },
+      "id": "mysql-query-suppressed",
+      "name": "Query Suppressed",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [480, 740],
+      "credentials": {
+        "mySql": { "id": "9io5uj6IpYHlzMgX", "name": "MySQL - Home DB" }
+      }
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "const rows = $input.all().map(i => i.json);\nconst days = Number($('GET /actions/suppressed').first().json.query.days) || 7;\n\nconst suppressed = rows.map(r => {\n  let parsedArgs = null;\n  try { parsedArgs = r.args_json ? JSON.parse(r.args_json) : null; } catch {}\n  return {\n    action_id: r.action_id,\n    args_hash: r.args_hash,\n    args: parsedArgs,\n    dismissed_at: r.dismissed_at_unix ? new Date(Number(r.dismissed_at_unix) * 1000).toISOString() : null\n  };\n});\n\nreturn [{ json: { window_days: days, count: suppressed.length, suppressed } }];"
+      },
+      "id": "code-format-suppressed",
+      "name": "Format Suppressed",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [720, 740]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "resp-suppressed",
+      "name": "Respond Suppressed",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [960, 740]
+    }
+  ],
+  "connections": {
+    "GET /actions/catalog": {
+      "main": [[{ "node": "Build Catalog", "type": "main", "index": 0 }]]
+    },
+    "Build Catalog": {
+      "main": [[{ "node": "Respond Catalog", "type": "main", "index": 0 }]]
+    },
+
+    "POST /actions/execute": {
+      "main": [[{ "node": "Dispatch Execute", "type": "main", "index": 0 }]]
+    },
+    "Dispatch Execute": {
+      "main": [[{ "node": "If Execute OK", "type": "main", "index": 0 }]]
+    },
+    "If Execute OK": {
+      "main": [
+        [{ "node": "Init Decisions (Execute)", "type": "main", "index": 0 }],
+        [{ "node": "Respond Execute Fail", "type": "main", "index": 0 }]
+      ]
+    },
+    "Init Decisions (Execute)": {
+      "main": [[{ "node": "Record Accept", "type": "main", "index": 0 }]]
+    },
+    "Record Accept": {
+      "main": [[{ "node": "Respond Execute OK", "type": "main", "index": 0 }]]
+    },
+
+    "POST /actions/decision": {
+      "main": [[{ "node": "Build Decision", "type": "main", "index": 0 }]]
+    },
+    "Build Decision": {
+      "main": [[{ "node": "Init Decisions (Decision)", "type": "main", "index": 0 }]]
+    },
+    "Init Decisions (Decision)": {
+      "main": [[{ "node": "Record Decision", "type": "main", "index": 0 }]]
+    },
+    "Record Decision": {
+      "main": [[{ "node": "Respond Decision", "type": "main", "index": 0 }]]
+    },
+
+    "GET /actions/suppressed": {
+      "main": [[{ "node": "Init Decisions (Suppressed)", "type": "main", "index": 0 }]]
+    },
+    "Init Decisions (Suppressed)": {
+      "main": [[{ "node": "Query Suppressed", "type": "main", "index": 0 }]]
+    },
+    "Query Suppressed": {
+      "main": [[{ "node": "Format Suppressed", "type": "main", "index": 0 }]]
+    },
+    "Format Suppressed": {
+      "main": [[{ "node": "Respond Suppressed", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {}
+}
