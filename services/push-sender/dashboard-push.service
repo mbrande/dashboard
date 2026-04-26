@@ -1,0 +1,16 @@
+[Unit]
+Description=Dashboard Web Push sender (sidecar called by n8n)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mike
+WorkingDirectory=/var/www/html/home/dashboard/services/push-sender
+EnvironmentFile=/etc/dashboard-push.env
+ExecStart=/home/mike/.nvm/versions/node/v24.14.0/bin/node dashboard_push.js
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1945,3 +1945,17 @@ body.panel-open { overflow: hidden; }
   border-radius: 6px;
   font-size: 0.82rem;
 }
+
+/* AlertDrawer push toggle */
+.alert-push-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 16px;
+  margin: 0 16px 8px;
+  background: rgba(26, 115, 232, 0.04);
+  border: 1px solid rgba(26, 115, 232, 0.15);
+  border-radius: 8px;
+}
+.alert-push-info { flex: 1; }
+.alert-push-title { font-size: 0.85rem; font-weight: 500; color: var(--text); }
+.alert-push-sub { font-size: 0.74rem; color: var(--text-dim); margin-top: 2px; }
+.alert-push-error { font-size: 0.72rem; color: var(--red); margin-top: 4px; }

@@ -1,0 +1,13 @@
+{
+  "name": "dashboard-push-sender",
+  "version": "1.0.0",
+  "description": "Sidecar HTTP service that signs VAPID + sends Web Push notifications. Called by the n8n Alert System workflow.",
+  "private": true,
+  "main": "dashboard_push.js",
+  "scripts": {
+    "start": "node dashboard_push.js"
+  },
+  "dependencies": {
+    "web-push": "^3.6.7"
+  }
+}

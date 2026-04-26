@@ -1,0 +1,285 @@
+{
+  "name": "Web Push",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "webpush/subscribe",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-sub",
+      "name": "POST /webpush/subscribe",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "webpush-subscribe"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "CREATE TABLE IF NOT EXISTS push_subscriptions (\n  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,\n  endpoint VARCHAR(500) NOT NULL UNIQUE,\n  p256dh VARCHAR(200) NOT NULL,\n  auth_key VARCHAR(100) NOT NULL,\n  user_agent VARCHAR(255) NULL,\n  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\n  last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP\n)",
+        "options": {}
+      },
+      "id": "init-sub",
+      "name": "Init Subscriptions Table",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [240, 0],
+      "credentials": {
+        "mySql": { "id": "9io5uj6IpYHlzMgX", "name": "MySQL - Home DB" }
+      }
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// Build the upsert SQL from the subscription body.\nconst input = $input.first().json;\nconst body = input.body || input;\nconst sub = body.subscription || body;\nconst userAgent = (input.headers && input.headers['user-agent']) || body.user_agent || '';\n\nif (!sub?.endpoint || !sub?.keys?.p256dh || !sub?.keys?.auth) {\n  return [{ json: { ok: false, error: 'subscription missing endpoint/keys', _skip: true } }];\n}\n\nconst esc = s => String(s).replace(/\\\\/g, '\\\\\\\\').replace(/'/g, \"''\");\nconst sql = `INSERT INTO push_subscriptions (endpoint, p256dh, auth_key, user_agent) VALUES ('${esc(sub.endpoint)}', '${esc(sub.keys.p256dh)}', '${esc(sub.keys.auth)}', '${esc(userAgent.slice(0, 255))}') ON DUPLICATE KEY UPDATE p256dh = VALUES(p256dh), auth_key = VALUES(auth_key), user_agent = VALUES(user_agent), last_seen = NOW()`;\n\nreturn [{ json: { ok: true, sql, endpoint: sub.endpoint } }];"
+      },
+      "id": "build-sub-sql",
+      "name": "Build Sub SQL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 0]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}",
+        "options": {}
+      },
+      "id": "do-sub-upsert",
+      "name": "Upsert Subscription",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [720, 0],
+      "credentials": {
+        "mySql": { "id": "9io5uj6IpYHlzMgX", "name": "MySQL - Home DB" }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true }) }}",
+        "options": {}
+      },
+      "id": "resp-sub",
+      "name": "Respond Sub",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [960, 0]
+    },
+
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "webpush/unsubscribe",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-unsub",
+      "name": "POST /webpush/unsubscribe",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 240],
+      "webhookId": "webpush-unsubscribe"
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "const input = $input.first().json;\nconst body = input.body || input;\nconst endpoint = body.endpoint;\nif (!endpoint) return [{ json: { ok: false, error: 'endpoint required' } }];\nconst esc = s => String(s).replace(/\\\\/g, '\\\\\\\\').replace(/'/g, \"''\");\nconst sql = `DELETE FROM push_subscriptions WHERE endpoint = '${esc(endpoint)}'`;\nreturn [{ json: { ok: true, sql, endpoint } }];"
+      },
+      "id": "build-unsub-sql",
+      "name": "Build Unsub SQL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [240, 240]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}",
+        "options": {}
+      },
+      "id": "do-unsub",
+      "name": "Delete Subscription",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [480, 240],
+      "credentials": {
+        "mySql": { "id": "9io5uj6IpYHlzMgX", "name": "MySQL - Home DB" }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true }) }}",
+        "options": {}
+      },
+      "id": "resp-unsub",
+      "name": "Respond Unsub",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [720, 240]
+    },
+
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "webpush/send",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-send",
+      "name": "POST /webpush/send",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 480],
+      "webhookId": "webpush-send"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "CREATE TABLE IF NOT EXISTS push_subscriptions (\n  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,\n  endpoint VARCHAR(500) NOT NULL UNIQUE,\n  p256dh VARCHAR(200) NOT NULL,\n  auth_key VARCHAR(100) NOT NULL,\n  user_agent VARCHAR(255) NULL,\n  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\n  last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP\n)",
+        "options": {}
+      },
+      "id": "init-send",
+      "name": "Init Subscriptions Table (Send)",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [240, 480],
+      "credentials": {
+        "mySql": { "id": "9io5uj6IpYHlzMgX", "name": "MySQL - Home DB" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT endpoint, p256dh, auth_key FROM push_subscriptions",
+        "options": {}
+      },
+      "id": "list-subs",
+      "name": "List Subscriptions",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "alwaysOutputData": true,
+      "position": [400, 480],
+      "credentials": {
+        "mySql": { "id": "9io5uj6IpYHlzMgX", "name": "MySQL - Home DB" }
+      }
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// Bundle subscriptions into the shape the sidecar wants.\nconst rows = $input.all().map(i => i.json).filter(r => r && r.endpoint);\nconst payloadInput = $('POST /webpush/send').first().json;\nconst payload = (payloadInput.body && payloadInput.body.payload) || payloadInput.payload || payloadInput.body || {};\n\nconst subscriptions = rows.map(r => ({\n  endpoint: r.endpoint,\n  keys: { p256dh: r.p256dh, auth: r.auth_key }\n}));\n\nreturn [{ json: { subscriptions, payload, count: subscriptions.length } }];"
+      },
+      "id": "build-send",
+      "name": "Build Send Body",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 480]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://192.168.0.32:8766/send-many",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ subscriptions: $json.subscriptions, payload: $json.payload, ttl: 3600 }) }}",
+        "options": {
+          "timeout": 15000,
+          "response": { "response": { "responseFormat": "json" } }
+        }
+      },
+      "id": "call-sender",
+      "name": "Call Sidecar",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [720, 480]
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// Sidecar returned per-subscription results. Drop dead endpoints (gone=true)\n// from MySQL so we stop trying.\nconst sidecar = $json;\nconst gone = (sidecar.results || []).filter(r => r.gone).map(r => r.endpoint);\n\nlet sql = 'SELECT 1';\nif (gone.length > 0) {\n  const list = gone.map(e => \"'\" + String(e).replace(/\\\\/g, '\\\\\\\\').replace(/'/g, \"''\") + \"'\").join(',');\n  sql = `DELETE FROM push_subscriptions WHERE endpoint IN (${list})`;\n}\n\nreturn [{ json: { ...sidecar, _cleanup_sql: sql, _gone_count: gone.length } }];"
+      },
+      "id": "post-send",
+      "name": "Post Send Cleanup",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [960, 480]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json._cleanup_sql }}",
+        "options": {}
+      },
+      "id": "cleanup-gone",
+      "name": "Cleanup Gone",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [1200, 480],
+      "credentials": {
+        "mySql": { "id": "9io5uj6IpYHlzMgX", "name": "MySQL - Home DB" }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($('Post Send Cleanup').first().json.summary || { total: 0, ok: 0, gone: 0, failed: 0 }) }}",
+        "options": {}
+      },
+      "id": "resp-send",
+      "name": "Respond Send",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1440, 480]
+    }
+  ],
+  "connections": {
+    "POST /webpush/subscribe": {
+      "main": [[{ "node": "Init Subscriptions Table", "type": "main", "index": 0 }]]
+    },
+    "Init Subscriptions Table": {
+      "main": [[{ "node": "Build Sub SQL", "type": "main", "index": 0 }]]
+    },
+    "Build Sub SQL": {
+      "main": [[{ "node": "Upsert Subscription", "type": "main", "index": 0 }]]
+    },
+    "Upsert Subscription": {
+      "main": [[{ "node": "Respond Sub", "type": "main", "index": 0 }]]
+    },
+
+    "POST /webpush/unsubscribe": {
+      "main": [[{ "node": "Build Unsub SQL", "type": "main", "index": 0 }]]
+    },
+    "Build Unsub SQL": {
+      "main": [[{ "node": "Delete Subscription", "type": "main", "index": 0 }]]
+    },
+    "Delete Subscription": {
+      "main": [[{ "node": "Respond Unsub", "type": "main", "index": 0 }]]
+    },
+
+    "POST /webpush/send": {
+      "main": [[{ "node": "Init Subscriptions Table (Send)", "type": "main", "index": 0 }]]
+    },
+    "Init Subscriptions Table (Send)": {
+      "main": [[{ "node": "List Subscriptions", "type": "main", "index": 0 }]]
+    },
+    "List Subscriptions": {
+      "main": [[{ "node": "Build Send Body", "type": "main", "index": 0 }]]
+    },
+    "Build Send Body": {
+      "main": [[{ "node": "Call Sidecar", "type": "main", "index": 0 }]]
+    },
+    "Call Sidecar": {
+      "main": [[{ "node": "Post Send Cleanup", "type": "main", "index": 0 }]]
+    },
+    "Post Send Cleanup": {
+      "main": [[{ "node": "Cleanup Gone", "type": "main", "index": 0 }]]
+    },
+    "Cleanup Gone": {
+      "main": [[{ "node": "Respond Send", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {}
+}

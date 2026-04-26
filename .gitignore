@@ -22,3 +22,7 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# push-sender service deps (installed locally)
+services/push-sender/node_modules/
+services/push-sender/package-lock.json

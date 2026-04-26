@@ -1,5 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useWebPush } from '../hooks/useWebPush';
 
 function timeAgo(dateStr) {
   if (!dateStr) return '';
@@ -39,6 +40,7 @@ const sourceIcons = {
 
 export default function AlertDrawer({ alerts, permission, onRequestPermission, onMarkRead, onClearAll, onClose }) {
   const navigate = useNavigate();
+  const push = useWebPush();
 
   const handleAlertClick = (alert) => {
     if (alert.url_hash) {
@@ -73,6 +75,27 @@ export default function AlertDrawer({ alerts, permission, onRequestPermission, o
               <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
             </svg>
             Click to enable browser notifications
+          </div>
+        )}
+
+        {push.supported && (
+          <div className="alert-push-row">
+            <div className="alert-push-info">
+              <div className="alert-push-title">Push notifications</div>
+              <div className="alert-push-sub">
+                {push.subscribed
+                  ? 'Active on this device — alerts arrive even when the dashboard is closed.'
+                  : 'Get notifications on this device when the dashboard is closed.'}
+              </div>
+              {push.error && <div className="alert-push-error">{push.error}</div>}
+            </div>
+            <button
+              className={`btn ${push.subscribed ? 'btn-outline' : ''}`}
+              style={{ padding: '5px 14px', fontSize: '0.78rem' }}
+              onClick={push.subscribed ? push.unsubscribe : push.subscribe}
+            >
+              {push.subscribed ? 'Disable' : 'Enable on this device'}
+            </button>
           </div>
         )}
 
