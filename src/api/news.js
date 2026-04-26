@@ -1,9 +1,10 @@
 const BASE = process.env.REACT_APP_N8N_BASE_URL;
 
-export const fetchArticles = ({ page = 1, limit = 20, topic, search } = {}) => {
+export const fetchArticles = ({ page = 1, limit = 20, topic, search, source } = {}) => {
   const params = new URLSearchParams({ page, limit });
   if (topic) params.set('topic', topic);
   if (search) params.set('search', search);
+  if (source) params.set('source', source);
   return fetch(`${BASE}/news/articles?${params}`).then(r => r.json());
 };
 

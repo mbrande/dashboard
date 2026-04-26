@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { fetchArticles, fetchSavedArticles, fetchSavedIds, saveArticle } from '../api/news';
+import { fetchArticles, fetchSavedArticles, fetchSavedIds, saveArticle, fetchSources } from '../api/news';
 import NewsChat from './NewsChat';
 
 const TOPICS = [
@@ -82,8 +82,9 @@ function ArticleCard({ article, saved, onToggleSave }) {
 }
 
 const savedIdsKey = ['news', 'saved-ids'];
-const feedKey = (topic, search) => ['news', 'feed', topic ?? 'all', search || ''];
+const feedKey = (topic, search, source) => ['news', 'feed', topic ?? 'all', search || '', source || 'all'];
 const savedKey = (topic) => ['news', 'saved', topic ?? 'all'];
+const sourcesKey = ['news', 'sources'];
 
 export default function NewsPage() {
   const qc = useQueryClient();
@@ -92,6 +93,22 @@ export default function NewsPage() {
   const [searchInput, setSearchInput] = useState('');
   const [chatOpen, setChatOpen] = useState(false);
   const [showSaved, setShowSaved] = useState(false);
+  const [source, setSource] = useState(null);
+
+  // Available sources for the dropdown.
+  const { data: sourcesRaw } = useQuery({
+    queryKey: sourcesKey,
+    queryFn: fetchSources,
+    select: (d) => unwrap(d)?.sources || [],
+    staleTime: 5 * 60_000,
+  });
+  const sourceOptions = useMemo(() => {
+    const all = sourcesRaw || [];
+    const filtered = topic ? all.filter(s => s.topic === topic) : all;
+    return filtered
+      .filter(s => s.enabled)
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [sourcesRaw, topic]);
 
   // Saved-id set powers the bookmark filled state across both views.
   const { data: savedIdsRaw } = useQuery({
@@ -106,9 +123,9 @@ export default function NewsPage() {
   // Query refetches the first page only on interval, which matches what the
   // old manual setInterval did.
   const feed = useInfiniteQuery({
-    queryKey: feedKey(topic, search),
+    queryKey: feedKey(topic, search, source),
     queryFn: ({ pageParam = 1 }) =>
-      fetchArticles({ page: pageParam, limit: PAGE_SIZE, topic, search: search || undefined }),
+      fetchArticles({ page: pageParam, limit: PAGE_SIZE, topic, search: search || undefined, source: source || undefined }),
     initialPageParam: 1,
     getNextPageParam: (lastPage, allPages) => {
       const p = unwrap(lastPage);
@@ -204,7 +221,7 @@ export default function NewsPage() {
               <button
                 key={t.label}
                 className={`nav-tab ${!showSaved && topic === t.key ? 'active' : ''}`}
-                onClick={() => { setShowSaved(false); setTopic(t.key); }}
+                onClick={() => { setShowSaved(false); setTopic(t.key); setSource(null); }}
               >
                 {t.label}
               </button>
@@ -220,6 +237,19 @@ export default function NewsPage() {
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {!showSaved && sourceOptions.length > 1 && (
+            <select
+              className="filter-input"
+              value={source || ''}
+              onChange={e => setSource(e.target.value || null)}
+              title="Filter by source"
+            >
+              <option value="">All sources</option>
+              {sourceOptions.map(s => (
+                <option key={s.id} value={s.name}>{s.name}</option>
+              ))}
+            </select>
+          )}
           {!showSaved && (
             <form onSubmit={handleSearch} style={{ display: 'flex', gap: 8 }}>
               <input
