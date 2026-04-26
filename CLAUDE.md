@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+**Planned work:** see `UPGRADES.md` for three substantial features the user has approved (web push notifications, voice-assistant tool-calling, daily AI briefing). Read it before working on any of those.
+
 ## Project Overview
 
 Home Dashboard — a React single-page app serving as a homelab monitoring hub. Sections: **Security** (Wazuh), **Server Metrics** (Zabbix), **Network** (Synology router + Pi-hole), and **News** (n8n-ingested feeds).

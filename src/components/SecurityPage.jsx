@@ -78,8 +78,8 @@ export default function SecurityPage() {
       </div>
 
       <ErrorBoundary name="Threat Overview"><ThreatOverview latest={latest} onSeverityClick={setSeverityFilter} trends={chartTrends} /></ErrorBoundary>
-      <ErrorBoundary name="Critical Insights"><CriticalInsights /></ErrorBoundary>
       <ErrorBoundary name="Failed Logins"><FailedLogins /></ErrorBoundary>
+      <ErrorBoundary name="Critical Insights"><CriticalInsights /></ErrorBoundary>
       <ErrorBoundary name="Dashboard Auth"><DashboardAuthEvents /></ErrorBoundary>
       <ErrorBoundary name="Live Feed"><LiveFeed /></ErrorBoundary>
       <ErrorBoundary name="Alert Trends"><AlertTrendArea trends={chartTrends} /></ErrorBoundary>
