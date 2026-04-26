@@ -1,0 +1,8 @@
+{
+  "name": "dashboard-reddit-proxy",
+  "version": "1.0.0",
+  "description": "Reddit fetch proxy — Reddit blocks the n8n container's IP, but accepts requests from this dashboard server.",
+  "private": true,
+  "main": "dashboard_reddit_proxy.js",
+  "scripts": { "start": "node dashboard_reddit_proxy.js" }
+}
