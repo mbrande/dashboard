@@ -2,6 +2,7 @@ import React, { useState, Suspense, lazy } from 'react';
 import { HashRouter, Routes, Route, NavLink, useNavigate } from 'react-router-dom';
 import { useTheme } from './hooks/useTheme';
 import ErrorBoundary from './components/ErrorBoundary';
+import BriefingCard from './components/BriefingCard';
 import AlertBell from './components/AlertBell';
 import VoiceAssistant from './components/VoiceAssistant';
 import NewDeviceToast from './components/NewDeviceToast';
@@ -26,6 +27,7 @@ function HomePage() {
   const navigate = useNavigate();
   return (
     <div className="home-page page-enter">
+      <ErrorBoundary name="Briefing"><BriefingCard /></ErrorBoundary>
       <div className="home-grid">
         <div className="home-tile" onClick={() => navigate('/security')}>
           <div className="home-tile-icon">

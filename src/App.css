@@ -1845,3 +1845,103 @@ body.panel-open { overflow: hidden; }
   color: #fff;
 }
 .btn.btn-danger:hover { background: #c5221f; }
+
+/* ---- Daily Briefing card ---- */
+.briefing-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px 18px;
+  margin-bottom: 18px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+.briefing-empty {
+  background: rgba(26, 115, 232, 0.04);
+  border-color: rgba(26, 115, 232, 0.18);
+}
+.briefing-empty-msg {
+  margin: 6px 0 0;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+
+.briefing-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 10px;
+}
+.briefing-meta {
+  display: flex; align-items: baseline; gap: 10px;
+}
+.briefing-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.briefing-time {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  opacity: 0.7;
+}
+.briefing-dismiss {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.briefing-dismiss:hover { background: rgba(0,0,0,0.06); color: var(--text); }
+.briefing-generate { font-size: 0.78rem; padding: 5px 12px; }
+
+.briefing-body {
+  font-size: 0.93rem;
+  line-height: 1.55;
+  color: var(--text);
+}
+.briefing-body p { margin: 0 0 10px; }
+.briefing-body p:last-child { margin-bottom: 0; }
+.briefing-body h1, .briefing-body h2, .briefing-body h3 {
+  margin: 14px 0 6px;
+  font-weight: 500;
+}
+.briefing-body h2 { font-size: 1.05rem; }
+.briefing-body h3 { font-size: 0.95rem; }
+.briefing-body ul, .briefing-body ol {
+  margin: 0 0 10px;
+  padding-left: 22px;
+}
+.briefing-body li { margin: 2px 0; }
+.briefing-body code {
+  background: rgba(0, 0, 0, 0.05);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.86em;
+}
+.briefing-body strong { font-weight: 600; }
+
+.briefing-actions {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.briefing-actions-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+.briefing-all-done {
+  margin-top: 12px;
+  padding: 8px 12px;
+  background: rgba(52, 168, 83, 0.08);
+  color: #137333;
+  border-radius: 6px;
+  font-size: 0.82rem;
+}

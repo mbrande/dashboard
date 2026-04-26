@@ -1,0 +1,303 @@
+{
+  "name": "Daily Briefing",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            { "field": "cronExpression", "expression": "0 6 * * *" }
+          ]
+        }
+      },
+      "id": "sched-trigger",
+      "name": "Daily 6am",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "briefing/generate",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-generate",
+      "name": "POST /briefing/generate",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 200],
+      "webhookId": "briefing-generate"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "CREATE TABLE IF NOT EXISTS ai_briefings (\n  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,\n  date DATE NOT NULL UNIQUE,\n  summary_md TEXT NOT NULL,\n  actions JSON NOT NULL,\n  raw_response MEDIUMTEXT NULL,\n  dismissed_at TIMESTAMP NULL,\n  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP\n)",
+        "options": {}
+      },
+      "id": "init-briefings",
+      "name": "Init Briefings Table",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [240, 100],
+      "credentials": {
+        "mySql": { "id": "9io5uj6IpYHlzMgX", "name": "MySQL - Home DB" }
+      }
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// Pull every snapshot the LLM needs in parallel.\nconst BASE = 'https://n8n.thisaimachine.com/webhook';\nconst paths = {\n  alerts:     '/alerts/pending',\n  services:   '/services/health',\n  wazuh:      '/wazuh/insights',\n  auth:       '/dashboard-auth/summary',\n  catalog:    '/actions/catalog',\n  suppressed: '/actions/suppressed?days=7'\n};\n\nconst pairs = await Promise.all(Object.entries(paths).map(async ([k, p]) => {\n  try {\n    const data = await this.helpers.httpRequest({\n      method: 'GET',\n      url: BASE + p,\n      timeout: 15000,\n      ignoreHttpStatusErrors: true,\n      json: true\n    });\n    return [k, Array.isArray(data) ? data[0] : data];\n  } catch (e) {\n    return [k, { _error: e?.message || String(e) }];\n  }\n}));\n\nconst snap = Object.fromEntries(pairs);\nreturn [{ json: { snap } }];"
+      },
+      "id": "gather",
+      "name": "Gather Snapshot",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 100]
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// Render the snapshot as a structured prompt + build the OpenAI request body.\nconst snap = $json.snap || {};\n\nfunction safeArr(v) { return Array.isArray(v) ? v : (v ? [v] : []); }\nfunction trunc(s, n) { return s && s.length > n ? s.slice(0, n - 1) + '…' : s; }\n\nlet text = '';\n\n// Active alerts\nconst alerts = (snap.alerts && snap.alerts.alerts) || [];\ntext += `## Active alerts (${alerts.length})\\n`;\nif (alerts.length === 0) text += 'None.\\n';\nelse for (const a of alerts) {\n  text += `- [${(a.severity||'?').toUpperCase()}] ${a.title || a.id}`;\n  if (a.body) text += ` — ${a.body}`;\n  text += `  (id: ${a.id}, fired ${a.fired_at || '?'})\\n`;\n}\ntext += '\\n';\n\n// Services\nconst services = (snap.services?.services) || [];\nconst summary = snap.services?.summary || {};\nconst down = services.filter(s => s.status === 'down');\nconst auth = services.filter(s => s.status === 'auth');\nconst flapping = services.filter(s => s.status === 'up' && s.uptime_24h_pct != null && s.uptime_24h_pct < 99);\ntext += `## Services (${summary.total || services.length} total, ${summary.up || 0} up, ${summary.down || 0} down, ${summary.auth || 0} auth)\\n`;\nif (down.length === 0 && flapping.length === 0) text += 'All services healthy.\\n';\nfor (const s of down) text += `- DOWN: ${s.name} — ${s.error || 'no error'} (link: ${s.url})\\n`;\nfor (const s of auth) text += `- AUTH-WALL: ${s.name}\\n`;\nfor (const s of flapping.slice(0, 8)) text += `- FLAPPING: ${s.name}, ${s.uptime_24h_pct}% uptime / 24h (last_down: ${s.last_down_at || '?'})\\n`;\ntext += '\\n';\n\n// Wazuh\nconst waz = snap.wazuh || {};\ntext += `## Wazuh (last 24h)\\n`;\nlet wazAny = false;\nif (waz.failed_auth?.total > 0) {\n  wazAny = true;\n  text += `- Failed auth: ${waz.failed_auth.total} attempts\\n`;\n  for (const ip of safeArr(waz.failed_auth.by_ip).slice(0, 5)) {\n    text += `  - ${ip.ip}: ${ip.count} attempts (${(ip.agents||[]).join(', ')})\\n`;\n  }\n}\nif (waz.high_alerts?.length > 0) {\n  wazAny = true;\n  text += `- High-severity alerts: ${waz.high_alerts.length}\\n`;\n  for (const a of waz.high_alerts.slice(0, 5)) text += `  - ${trunc(a.description, 80)} (×${a.count})\\n`;\n}\nif (waz.priv_escalation?.total > 0) {\n  wazAny = true;\n  text += `- Privilege escalation events: ${waz.priv_escalation.total}\\n`;\n}\nif (waz.vulnerabilities?.length > 0) {\n  wazAny = true;\n  text += `- Vulnerabilities flagged: ${waz.vulnerabilities.length}\\n`;\n  for (const v of waz.vulnerabilities.slice(0, 3)) text += `  - ${trunc(v.description, 80)}\\n`;\n}\nif (!wazAny) text += 'Nothing notable.\\n';\ntext += '\\n';\n\n// Dashboard auth\nconst da = snap.auth || {};\nconst conc = da.concerning?.total || 0;\ntext += `## Dashboard auth (last ${da.window_days || 7}d)\\n`;\nconst cls = da.classification || {};\ntext += `- Total credential-less 401s: ${da.total || 0} (${cls.asset_probes || 0} asset probes, ${cls.monitor_probes || 0} monitor probes, ${cls.endpoint_probes || 0} endpoint probes, ${cls.real_attempts || 0} real bad-password)\\n`;\ntext += `- Concerning external IPs: ${conc}\\n`;\nif (conc > 0) {\n  for (const ip of safeArr(da.concerning?.by_ip).slice(0, 5)) {\n    text += `  - ${ip.ip}: ${ip.real_attempts || 0} bad-password, ${ip.endpoint_probes || 0} endpoint probes\\n`;\n  }\n}\ntext += '\\n';\n\n// Available actions\nconst catalog = snap.catalog?.catalog || {};\ntext += `## Available actions you may recommend\\n`;\nfor (const [id, a] of Object.entries(catalog)) {\n  const args = a.args_schema && Object.keys(a.args_schema).length\n    ? `(${Object.entries(a.args_schema).map(([k,v]) => `${k}: ${v}`).join(', ')})`\n    : '()';\n  text += `- ${id}${args}  [risk: ${a.risk}]  — ${a.description}\\n`;\n  if (a.example_args) text += `  example_args: ${JSON.stringify(a.example_args)}\\n`;\n}\ntext += '\\n';\n\n// Suppressed\nconst suppressed = snap.suppressed?.suppressed || [];\nif (suppressed.length > 0) {\n  text += `## Recently dismissed (do NOT re-recommend these exact (id, args) combinations)\\n`;\n  for (const s of suppressed) {\n    text += `- ${s.action_id} with args ${JSON.stringify(s.args)}\\n`;\n  }\n  text += '\\n';\n}\n\nconst systemPrompt = `You are a helpful homelab analyst writing a daily briefing for the user.\n\nProduce:\n1. A summary in markdown (2-4 short paragraphs). Focus on what's NEW or NOTABLE — don't re-state every metric. Lead with anything that needs attention. Be specific (name the alerts, services, IPs, rules involved). If everything is healthy, say so in one sentence and stop.\n2. A list of 0-5 recommended actions. If nothing genuinely needs the user's intervention, return an empty array — do NOT pad.\n\nHard rules for actions:\n- ONLY recommend MUTATING actions (those with readonly: false in the catalog). Read-only actions like list_alerts or get_service_history exist for the agent to look things up — they should NOT appear in the briefing because the user is already reading the briefing.\n- NEVER recommend an action not in the AVAILABLE ACTIONS list.\n- NEVER re-propose any (id, args) pair from the RECENTLY DISMISSED list.\n- Each recommendation's 'description' must reference specific entities from this user's data (alert ids, service names, IP addresses) — never generic advice.\n- 'args' MUST match the action's args_schema exactly. For ack_alerts, args MUST be {\"ids\": [\"<actual-alert-id-from-active-list>\", ...]} drawn from the active alerts; never invent ids.\n- Risk MUST match the action's declared risk in the catalog.\n- Distinguish dashboard 'Active alerts' (the pending_alerts table — these can be acked via ack_alerts) from Wazuh 'High-severity alerts' (these are observations from the security log; they cannot be acked from this dashboard).\n\nReturn STRICT JSON only, no markdown fences:\n{\n  \"summary\": \"Markdown text here.\",\n  \"actions\": [\n    { \"id\": \"ack_alerts\", \"title\": \"…\", \"description\": \"…\", \"args\": {\"ids\": [\"…\"]}, \"risk\": \"low\" }\n  ]\n}`;\n\nconst requestBody = JSON.stringify({\n  model: 'gpt-4o-mini',\n  messages: [\n    { role: 'system', content: systemPrompt },\n    { role: 'user', content: text }\n  ],\n  response_format: { type: 'json_object' },\n  temperature: 0.3,\n  max_tokens: 1500\n});\n\nreturn [{ json: { requestBody, snapshotText: text } }];"
+      },
+      "id": "build-prompt",
+      "name": "Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [720, 100]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.requestBody }}",
+        "options": { "response": { "response": { "responseFormat": "json" } } }
+      },
+      "id": "openai",
+      "name": "Call OpenAI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [960, 100],
+      "credentials": {
+        "openAiApi": { "id": "3hmSfLDh5GvxKdKm", "name": "OpenAi account" }
+      }
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// Parse the OpenAI completion, validate against the catalog, build SQL.\nconst raw = $json.choices?.[0]?.message?.content || '';\n\nlet parsed = { summary: '', actions: [] };\ntry {\n  parsed = JSON.parse(raw);\n} catch (e) {\n  parsed = {\n    summary: 'AI briefing generation returned invalid JSON. Raw response: ' + raw.slice(0, 600),\n    actions: []\n  };\n}\n\nconst snapJson = $('Gather Snapshot').first().json.snap || {};\nconst catalog = snapJson.catalog?.catalog || {};\nconst suppressed = snapJson.suppressed?.suppressed || [];\nconst suppressedKeys = new Set(suppressed.map(s => `${s.action_id}|${s.args_hash}`));\n\nfunction argsHash(args) {\n  const sortedKeys = Object.keys(args || {}).sort();\n  const canonical = JSON.stringify(args || {}, sortedKeys);\n  let h1 = 5381n, h2 = 7853n, h3 = 9871n, h4 = 11483n;\n  const M = 0xffffffffffffffffn;\n  for (let i = 0; i < canonical.length; i++) {\n    const c = BigInt(canonical.charCodeAt(i));\n    h1 = ((h1 << 5n) + h1 + c) & M;\n    h2 = ((h2 << 5n) + h2 + c) & M;\n    h3 = ((h3 << 5n) + h3 + c) & M;\n    h4 = ((h4 << 5n) + h4 + c) & M;\n  }\n  return [h1, h2, h3, h4].map(h => h.toString(16).padStart(16, '0')).join('');\n}\n\n// Validate each action: must be in catalog, not in suppressed, schema OK,\n// and pass per-action sanity (e.g. ack_alerts ids must exist in active alerts).\nconst activeAlertIds = new Set(((snapJson.alerts && snapJson.alerts.alerts) || []).map(a => a.id));\n\nconst validated = [];\nfor (const proposal of (parsed.actions || [])) {\n  if (!proposal || typeof proposal !== 'object') continue;\n  if (!proposal.id || !catalog[proposal.id]) continue;\n\n  let args = proposal.args || {};\n\n  // Per-action sanity: ack_alerts ids MUST exist in the live active alerts.\n  // The LLM tends to hallucinate ids; strip non-existent ones, drop the action\n  // if none remain.\n  if (proposal.id === 'ack_alerts') {\n    const rawIds = Array.isArray(args.ids) ? args.ids : [];\n    const realIds = rawIds.filter(id => activeAlertIds.has(id));\n    if (realIds.length === 0) continue;\n    args = { ids: realIds };\n  }\n\n  const hash = argsHash(args);\n  if (suppressedKeys.has(`${proposal.id}|${hash}`)) continue;\n\n  validated.push({\n    id: proposal.id,\n    title: String(proposal.title || proposal.id).slice(0, 200),\n    description: String(proposal.description || '').slice(0, 1000),\n    args,\n    args_hash: hash,\n    risk: ['low','medium','high'].includes(proposal.risk) ? proposal.risk : (catalog[proposal.id].risk || 'low')\n  });\n}\n\nconst summaryEsc = String(parsed.summary || '').replace(/\\\\/g, '\\\\\\\\').replace(/'/g, \"''\");\nconst actionsEsc = JSON.stringify(validated).replace(/\\\\/g, '\\\\\\\\').replace(/'/g, \"''\");\nconst rawEsc = String(raw).replace(/\\\\/g, '\\\\\\\\').replace(/'/g, \"''\").slice(0, 60000);\n\nconst sql = `REPLACE INTO ai_briefings (date, summary_md, actions, raw_response) VALUES (CURDATE(), '${summaryEsc}', '${actionsEsc}', '${rawEsc}')`;\n\nreturn [{ json: { sql, briefing: { summary_md: parsed.summary || '', actions: validated, generated_at: new Date().toISOString() } } }];"
+      },
+      "id": "parse-validate",
+      "name": "Parse + Validate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1200, 100]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}",
+        "options": {}
+      },
+      "id": "save-briefing",
+      "name": "Save Briefing",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [1440, 100],
+      "credentials": {
+        "mySql": { "id": "9io5uj6IpYHlzMgX", "name": "MySQL - Home DB" }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($('Parse + Validate').first().json.briefing) }}",
+        "options": {}
+      },
+      "id": "resp-generate",
+      "name": "Respond Generate",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1680, 100]
+    },
+
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "briefing/today",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-today",
+      "name": "GET /briefing/today",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 480],
+      "webhookId": "briefing-today"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "CREATE TABLE IF NOT EXISTS ai_briefings (\n  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,\n  date DATE NOT NULL UNIQUE,\n  summary_md TEXT NOT NULL,\n  actions JSON NOT NULL,\n  raw_response MEDIUMTEXT NULL,\n  dismissed_at TIMESTAMP NULL,\n  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP\n)",
+        "options": {}
+      },
+      "id": "init-today",
+      "name": "Init (Today)",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [240, 480],
+      "credentials": {
+        "mySql": { "id": "9io5uj6IpYHlzMgX", "name": "MySQL - Home DB" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT date, summary_md, actions, dismissed_at, UNIX_TIMESTAMP(created_at) AS created_at_unix FROM ai_briefings ORDER BY date DESC LIMIT 1",
+        "options": {}
+      },
+      "id": "query-today",
+      "name": "Query Latest",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [480, 480],
+      "credentials": {
+        "mySql": { "id": "9io5uj6IpYHlzMgX", "name": "MySQL - Home DB" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT action_id, args_hash, decision, UNIX_TIMESTAMP(decided_at) AS decided_at_unix FROM ai_action_decisions WHERE decided_at >= NOW() - INTERVAL 2 DAY ORDER BY decided_at DESC",
+        "options": {}
+      },
+      "id": "query-decisions",
+      "name": "Query Recent Decisions",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [720, 480],
+      "credentials": {
+        "mySql": { "id": "9io5uj6IpYHlzMgX", "name": "MySQL - Home DB" }
+      }
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// Combine the briefing row with recent action decisions so each action carries\n// its current status (proposed | accepted | dismissed).\nconst briefingRow = $('Query Latest').first()?.json;\nif (!briefingRow || !briefingRow.date) {\n  return [{ json: { exists: false } }];\n}\n\nconst decisions = $input.all().map(i => i.json);\nconst byKey = new Map();\nfor (const d of decisions) {\n  const k = `${d.action_id}|${d.args_hash}`;\n  // Keep the most recent (rows already ORDER BY decided_at DESC).\n  if (!byKey.has(k)) byKey.set(k, d);\n}\n\nlet actions = [];\ntry {\n  const raw = briefingRow.actions;\n  actions = typeof raw === 'string' ? JSON.parse(raw) : (raw || []);\n} catch {}\n\nconst annotated = (actions || []).map(a => {\n  const dec = byKey.get(`${a.id}|${a.args_hash}`);\n  return {\n    ...a,\n    status: dec ? dec.decision : 'proposed',\n    decided_at: dec ? new Date(Number(dec.decided_at_unix) * 1000).toISOString() : null\n  };\n});\n\nconst createdUnix = Number(briefingRow.created_at_unix) || null;\n\nreturn [{ json: {\n  exists: true,\n  date: String(briefingRow.date).slice(0, 10),\n  summary_md: briefingRow.summary_md || '',\n  actions: annotated,\n  dismissed: !!briefingRow.dismissed_at,\n  generated_at: createdUnix ? new Date(createdUnix * 1000).toISOString() : null\n}}];"
+      },
+      "id": "format-today",
+      "name": "Format Today",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [960, 480]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "resp-today",
+      "name": "Respond Today",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1200, 480]
+    },
+
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "briefing/dismiss",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-dismiss",
+      "name": "POST /briefing/dismiss",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 740],
+      "webhookId": "briefing-dismiss"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE ai_briefings SET dismissed_at = NOW() WHERE date = CURDATE() AND dismissed_at IS NULL",
+        "options": {}
+      },
+      "id": "do-dismiss",
+      "name": "Dismiss Today",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [240, 740],
+      "credentials": {
+        "mySql": { "id": "9io5uj6IpYHlzMgX", "name": "MySQL - Home DB" }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true }) }}",
+        "options": {}
+      },
+      "id": "resp-dismiss",
+      "name": "Respond Dismiss",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [480, 740]
+    }
+  ],
+  "connections": {
+    "Daily 6am": {
+      "main": [[{ "node": "Init Briefings Table", "type": "main", "index": 0 }]]
+    },
+    "POST /briefing/generate": {
+      "main": [[{ "node": "Init Briefings Table", "type": "main", "index": 0 }]]
+    },
+    "Init Briefings Table": {
+      "main": [[{ "node": "Gather Snapshot", "type": "main", "index": 0 }]]
+    },
+    "Gather Snapshot": {
+      "main": [[{ "node": "Build Prompt", "type": "main", "index": 0 }]]
+    },
+    "Build Prompt": {
+      "main": [[{ "node": "Call OpenAI", "type": "main", "index": 0 }]]
+    },
+    "Call OpenAI": {
+      "main": [[{ "node": "Parse + Validate", "type": "main", "index": 0 }]]
+    },
+    "Parse + Validate": {
+      "main": [[{ "node": "Save Briefing", "type": "main", "index": 0 }]]
+    },
+    "Save Briefing": {
+      "main": [[{ "node": "Respond Generate", "type": "main", "index": 0 }]]
+    },
+
+    "GET /briefing/today": {
+      "main": [[{ "node": "Init (Today)", "type": "main", "index": 0 }]]
+    },
+    "Init (Today)": {
+      "main": [[{ "node": "Query Latest", "type": "main", "index": 0 }]]
+    },
+    "Query Latest": {
+      "main": [[{ "node": "Query Recent Decisions", "type": "main", "index": 0 }]]
+    },
+    "Query Recent Decisions": {
+      "main": [[{ "node": "Format Today", "type": "main", "index": 0 }]]
+    },
+    "Format Today": {
+      "main": [[{ "node": "Respond Today", "type": "main", "index": 0 }]]
+    },
+
+    "POST /briefing/dismiss": {
+      "main": [[{ "node": "Dismiss Today", "type": "main", "index": 0 }]]
+    },
+    "Dismiss Today": {
+      "main": [[{ "node": "Respond Dismiss", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {}
+}
