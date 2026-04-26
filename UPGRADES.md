@@ -279,10 +279,23 @@ sidecar service.
 
 ## #4 — Voice Assistant: Tool-Calling (with proposal-only flow)
 
-**Goal:** the voice assistant can answer questions that require *doing*
-something, not just describing state. But — per the hard constraint — it
-must always propose an action and wait for accept/deny, never execute on
-its own.
+> **Status: cancelled (2026-04-26).** After thinking it through, the user
+> decided they do not want the AI to be able to mutate any server state at
+> all — even with explicit per-action consent. Without mutating actions the
+> only thing this build would add is OpenAI function-calling for read-only
+> lookups, which is a marginal improvement over the current "snapshot
+> baked into the system prompt" approach. Not worth the engineering.
+>
+> **Standing principle for future work:** the AI is read-only. It can
+> describe state, summarize trends, and suggest *manual* steps the user
+> might take in plain English — but actions in the catalog should stay
+> read-only. If a future session is tempted to add a mutating action,
+> double-check with the user first.
+
+**Goal (original, for reference):** the voice assistant can answer
+questions that require *doing* something, not just describing state. But
+— per the hard constraint — it must always propose an action and wait for
+accept/deny, never execute on its own.
 
 ### Scope
 
