@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useMemo } from 'react';
+import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchArticles, fetchSavedArticles, fetchSavedIds, saveArticle } from '../api/news';
 import NewsChat from './NewsChat';
 
@@ -9,6 +10,9 @@ const TOPICS = [
   { key: 'computers', label: 'Computers' },
   { key: 'tech', label: 'Tech' },
 ];
+
+const PAGE_SIZE = 20;
+const unwrap = (d) => (Array.isArray(d) ? d[0] : d);
 
 function timeAgo(dateStr) {
   if (!dateStr) return '';
@@ -77,65 +81,110 @@ function ArticleCard({ article, saved, onToggleSave }) {
   );
 }
 
+const savedIdsKey = ['news', 'saved-ids'];
+const feedKey = (topic, search) => ['news', 'feed', topic ?? 'all', search || ''];
+const savedKey = (topic) => ['news', 'saved', topic ?? 'all'];
+
 export default function NewsPage() {
-  const [articles, setArticles] = useState([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
+  const qc = useQueryClient();
   const [topic, setTopic] = useState(null);
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
-  const [loading, setLoading] = useState(true);
   const [chatOpen, setChatOpen] = useState(false);
-  const [savedIds, setSavedIds] = useState(new Set());
   const [showSaved, setShowSaved] = useState(false);
 
-  // Load saved IDs on mount
-  useEffect(() => {
-    fetchSavedIds().then(data => {
-      const result = Array.isArray(data) ? data[0] : data;
-      setSavedIds(new Set(result?.ids || []));
-    }).catch(() => {});
-  }, []);
+  // Saved-id set powers the bookmark filled state across both views.
+  const { data: savedIdsRaw } = useQuery({
+    queryKey: savedIdsKey,
+    queryFn: fetchSavedIds,
+    select: (d) => unwrap(d)?.ids || [],
+    staleTime: 60_000,
+  });
+  const savedIds = useMemo(() => new Set(savedIdsRaw || []), [savedIdsRaw]);
 
-  const loadArticles = useCallback(async (p, t, s, append) => {
-    setLoading(true);
-    try {
-      let data;
-      if (showSaved) {
-        data = await fetchSavedArticles({ topic: t });
-      } else {
-        data = await fetchArticles({ page: p, limit: 20, topic: t, search: s || undefined });
+  // Main feed: paginated via useInfiniteQuery. Polled every 60s — TanStack
+  // Query refetches the first page only on interval, which matches what the
+  // old manual setInterval did.
+  const feed = useInfiniteQuery({
+    queryKey: feedKey(topic, search),
+    queryFn: ({ pageParam = 1 }) =>
+      fetchArticles({ page: pageParam, limit: PAGE_SIZE, topic, search: search || undefined }),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage, allPages) => {
+      const p = unwrap(lastPage);
+      const loaded = allPages.reduce((n, pg) => n + (unwrap(pg)?.articles?.length || 0), 0);
+      const total = p?.total || 0;
+      return loaded < total ? allPages.length + 1 : undefined;
+    },
+    refetchInterval: showSaved ? false : 60_000,
+    refetchIntervalInBackground: false,
+    staleTime: 30_000,
+    enabled: !showSaved,
+  });
+
+  // Saved view: simple non-paginated query. Only enabled when showing saved.
+  const savedView = useQuery({
+    queryKey: savedKey(topic),
+    queryFn: () => fetchSavedArticles({ topic }),
+    select: (d) => unwrap(d)?.articles || [],
+    enabled: showSaved,
+    staleTime: 30_000,
+  });
+
+  // Articles to display: flatten infinite pages OR show the saved list.
+  const articles = useMemo(() => {
+    if (showSaved) return savedView.data || [];
+    const pages = feed.data?.pages || [];
+    return pages.flatMap(p => unwrap(p)?.articles || []);
+  }, [showSaved, savedView.data, feed.data]);
+
+  const total = useMemo(() => {
+    if (showSaved) return articles.length;
+    const pages = feed.data?.pages || [];
+    return unwrap(pages[pages.length - 1])?.total ?? articles.length;
+  }, [showSaved, articles, feed.data]);
+
+  const loading = showSaved ? savedView.isPending : feed.isPending;
+
+  // Optimistic save/unsave. Updates saved-ids cache + saved-view if mounted,
+  // rolls back on failure.
+  const saveMutation = useMutation({
+    mutationFn: ({ articleId, action }) => saveArticle(articleId, action),
+    onMutate: async ({ articleId, action }) => {
+      await qc.cancelQueries({ queryKey: savedIdsKey });
+      const prevIds = qc.getQueryData(savedIdsKey);
+      qc.setQueryData(savedIdsKey, (old) => {
+        const ids = new Set(unwrap(old)?.ids || []);
+        if (action === 'save') ids.add(articleId);
+        else ids.delete(articleId);
+        const arr = [...ids];
+        return Array.isArray(old) ? [{ ids: arr }] : { ids: arr };
+      });
+      // If the saved view is currently displayed and we're unsaving, drop the
+      // article from it so the row disappears.
+      if (showSaved && action === 'unsave') {
+        qc.setQueryData(savedKey(topic), (old) => {
+          const obj = unwrap(old);
+          if (!obj?.articles) return old;
+          const next = { ...obj, articles: obj.articles.filter(a => a.id !== articleId) };
+          return Array.isArray(old) ? [next] : next;
+        });
       }
-      const result = Array.isArray(data) ? data[0] : data;
-      const arts = result?.articles || [];
-      if (append) {
-        setArticles(prev => [...prev, ...arts]);
-      } else {
-        setArticles(arts);
-      }
-      setTotal(result?.total || arts.length);
-    } catch {
-      // silent fail
-    }
-    setLoading(false);
-  }, [showSaved]);
+      return { prevIds };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.prevIds !== undefined) qc.setQueryData(savedIdsKey, ctx.prevIds);
+      // saved view will refetch on invalidate below
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: savedIdsKey });
+      qc.invalidateQueries({ queryKey: ['news', 'saved'] });
+    },
+  });
 
-  useEffect(() => {
-    setPage(1);
-    loadArticles(1, topic, search, false);
-  }, [topic, search, showSaved, loadArticles]);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      loadArticles(1, topic, search, false);
-    }, 60000);
-    return () => clearInterval(interval);
-  }, [topic, search, showSaved, loadArticles]);
-
-  const loadMore = () => {
-    const nextPage = page + 1;
-    setPage(nextPage);
-    loadArticles(nextPage, topic, search, true);
+  const toggleSave = (articleId) => {
+    const action = savedIds.has(articleId) ? 'unsave' : 'save';
+    saveMutation.mutate({ articleId, action });
   };
 
   const handleSearch = (e) => {
@@ -143,35 +192,8 @@ export default function NewsPage() {
     setSearch(searchInput);
   };
 
-  const toggleSave = async (articleId) => {
-    const isSaved = savedIds.has(articleId);
-    const action = isSaved ? 'unsave' : 'save';
-
-    // Optimistic update
-    setSavedIds(prev => {
-      const next = new Set(prev);
-      if (isSaved) next.delete(articleId);
-      else next.add(articleId);
-      return next;
-    });
-
-    // If we're viewing saved and unsaving, remove from list
-    if (showSaved && isSaved) {
-      setArticles(prev => prev.filter(a => a.id !== articleId));
-    }
-
-    try {
-      await saveArticle(articleId, action);
-    } catch {
-      // Revert on failure
-      setSavedIds(prev => {
-        const next = new Set(prev);
-        if (isSaved) next.add(articleId);
-        else next.delete(articleId);
-        return next;
-      });
-    }
-  };
+  const showLoadMore =
+    !showSaved && articles.length > 0 && articles.length < total && feed.hasNextPage;
 
   return (
     <div className="news-page page-enter">
@@ -244,10 +266,14 @@ export default function NewsPage() {
             <div className="empty-state">No articles found</div>
           )}
 
-          {!showSaved && articles.length > 0 && articles.length < total && (
+          {showLoadMore && (
             <div style={{ textAlign: 'center', padding: 16 }}>
-              <button className="btn btn-outline" onClick={loadMore} disabled={loading}>
-                {loading ? 'Loading...' : 'Load More'}
+              <button
+                className="btn btn-outline"
+                onClick={() => feed.fetchNextPage()}
+                disabled={feed.isFetchingNextPage}
+              >
+                {feed.isFetchingNextPage ? 'Loading...' : 'Load More'}
               </button>
             </div>
           )}

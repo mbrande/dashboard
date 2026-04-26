@@ -103,7 +103,7 @@ export default function AgentDetail({ agent, onClose }) {
       setAlerts(ad || null);
       setLoading(false);
     });
-  }, [agent.agent_id]);
+  }, [agent.agent_id, agent.agent_name]);
 
   const loadScaFails = (policyId) => {
     setScaFailsLoading(true);

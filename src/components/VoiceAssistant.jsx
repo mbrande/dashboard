@@ -135,7 +135,7 @@ export default function VoiceAssistant() {
         setActiveStream(null);
         stream.getTracks().forEach(t => t.stop());
         const blob = new Blob(chunksRef.current, { type: recorder.mimeType });
-        if (blob.size > 0) transcribeAndAsk(blob);
+        if (blob.size > 0) transcribeAndAskRef.current?.(blob);
         else setState('idle');
       };
       mediaRecorderRef.current = recorder;

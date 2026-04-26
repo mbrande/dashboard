@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import { useBriefing } from '../hooks/useBriefing';
 import ProposedAction from './ProposedAction';

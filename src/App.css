@@ -561,8 +561,8 @@ body {
 .plex-row:first-child { border-top: none; padding-top: 0; }
 .plex-row-top { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
 .plex-state { font-size: 0.65rem; padding: 2px 8px; border-radius: 999px; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
-.plex-state-playing   { background: #e6f4ea; color: #137333; }
-.plex-state-paused    { background: #fef7e0; color: #b06000; }
+.plex-state-playing   { background: #e6f4ea; color: var(--green); }
+.plex-state-paused    { background: #fef7e0; color: var(--yellow); }
 .plex-state-buffering { background: #e8f0fe; color: #1967d2; }
 [data-theme="dark"] .plex-state-playing   { background: rgba(81,207,102,0.18);  color: #51cf66; }
 [data-theme="dark"] .plex-state-paused    { background: rgba(252,196,25,0.18);  color: #fcc419; }
@@ -958,8 +958,8 @@ tr:hover td { background: var(--bg-hover); }
   display: inline-flex; align-items: baseline; gap: 4px;
   background: #e6f4ea; padding: 3px 10px; border-radius: 12px;
 }
-.eps-value { font-size: 1.1rem; font-weight: 600; color: #137333; font-variant-numeric: tabular-nums; }
-.eps-label { font-size: 0.6rem; color: #137333; text-transform: uppercase; font-weight: 500; }
+.eps-value { font-size: 1.1rem; font-weight: 600; color: var(--green); font-variant-numeric: tabular-nums; }
+.eps-label { font-size: 0.6rem; color: var(--green); text-transform: uppercase; font-weight: 500; }
 .feed-count { font-size: 0.75rem; color: #9aa0a6; }
 
 .feed-pause {
@@ -993,7 +993,7 @@ tr:hover td { background: var(--bg-hover); }
   font-family: 'Roboto Mono', monospace; font-size: 0.65rem;
   padding: 1px 6px; border-radius: 3px; white-space: nowrap; flex-shrink: 0;
 }
-.feed-src { background: #fce8e6; color: #c5221f; }
+.feed-src { background: #fce8e6; color: var(--red); }
 .feed-dst { background: #fef7e0; color: #e37400; }
 .feed-dns { background: #e8f0fe; color: #1a73e8; }
 .feed-time { color: #9aa0a6; font-size: 0.65rem; white-space: nowrap; flex-shrink: 0; }
@@ -1560,9 +1560,9 @@ body.panel-open { overflow: hidden; }
   border-radius: 4px;
   flex-shrink: 0;
 }
-.svc-up    .svc-card-status { background: rgba(52, 168, 83, 0.12); color: #137333; }
-.svc-auth  .svc-card-status { background: rgba(249, 171, 0, 0.14); color: #b06000; }
-.svc-down  .svc-card-status { background: rgba(217, 48, 37, 0.12); color: #c5221f; }
+.svc-up    .svc-card-status { background: rgba(52, 168, 83, 0.12); color: var(--green); }
+.svc-auth  .svc-card-status { background: rgba(249, 171, 0, 0.14); color: var(--yellow); }
+.svc-down  .svc-card-status { background: rgba(217, 48, 37, 0.12); color: var(--red); }
 
 .svc-card-meta {
   display: flex; gap: 8px; align-items: center;
@@ -1621,9 +1621,9 @@ body.panel-open { overflow: hidden; }
   padding: 4px 10px;
   border-radius: 6px;
 }
-.svc-detail-status.svc-up    { background: rgba(52, 168, 83, 0.12); color: #137333; }
-.svc-detail-status.svc-auth  { background: rgba(249, 171, 0, 0.14); color: #b06000; }
-.svc-detail-status.svc-down  { background: rgba(217, 48, 37, 0.12); color: #c5221f; }
+.svc-detail-status.svc-up    { background: rgba(52, 168, 83, 0.12); color: var(--green); }
+.svc-detail-status.svc-auth  { background: rgba(249, 171, 0, 0.14); color: var(--yellow); }
+.svc-detail-status.svc-down  { background: rgba(217, 48, 37, 0.12); color: var(--red); }
 
 .svc-detail-uptime-row {
   display: flex; gap: 8px; flex-wrap: wrap;
@@ -1702,7 +1702,7 @@ body.panel-open { overflow: hidden; }
   letter-spacing: 0.06em;
 }
 .svc-incident-down  .svc-incident-status { color: var(--red); }
-.svc-incident-auth  .svc-incident-status { color: #b06000; }
+.svc-incident-auth  .svc-incident-status { color: var(--yellow); }
 .svc-incident-time { color: var(--text-dim); font-size: 0.78rem; }
 .svc-incident-duration {
   margin-left: auto;
@@ -1787,12 +1787,12 @@ body.panel-open { overflow: hidden; }
   padding: 2px 6px;
   border-radius: 4px;
   background: rgba(217, 48, 37, 0.12);
-  color: #c5221f;
+  color: var(--red);
   text-transform: uppercase;
 }
 .pa-risk-medium .pa-risk-badge {
   background: rgba(249, 171, 0, 0.14);
-  color: #b06000;
+  color: var(--yellow);
 }
 
 .pa-description {
@@ -1827,7 +1827,7 @@ body.panel-open { overflow: hidden; }
   margin-top: 6px;
   padding: 6px 10px;
   background: rgba(217, 48, 37, 0.08);
-  color: #c5221f;
+  color: var(--red);
   border-radius: 4px;
   font-size: 0.78rem;
 }
@@ -1941,7 +1941,7 @@ body.panel-open { overflow: hidden; }
   margin-top: 12px;
   padding: 8px 12px;
   background: rgba(52, 168, 83, 0.08);
-  color: #137333;
+  color: var(--green);
   border-radius: 6px;
   font-size: 0.82rem;
 }
